@@ -1,0 +1,111 @@
+:root {
+  --bg: #f6f7f9;
+  --card: #ffffff;
+  --ink: #1c2430;
+  --muted: #5c6773;
+  --line: #e2e6eb;
+  --brand: #2f7a4d;       /* farm green */
+  --brand-dark: #245e3c;
+  --danger: #b3261e;
+  --danger-bg: #fdecea;
+  --warn: #8a5a00;
+  --warn-bg: #fff4d6;
+  --ok: #1f7a3d;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--bg);
+}
+a { color: var(--brand-dark); }
+
+header.topbar {
+  background: var(--brand);
+  color: #fff;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 54px;
+}
+header.topbar a { color: #fff; text-decoration: none; }
+header.topbar .brand { font-weight: 700; font-size: 17px; }
+header.topbar nav a { margin-left: 16px; opacity: .9; }
+header.topbar nav a:hover { opacity: 1; text-decoration: underline; }
+header.topbar form { display: inline; margin: 0 0 0 16px; }
+header.topbar button.link {
+  background: none; border: 0; color: #fff; cursor: pointer; font: inherit; opacity: .9;
+}
+
+main { max-width: 1040px; margin: 24px auto; padding: 0 20px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+h2 { font-size: 16px; margin: 24px 0 10px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px;
+  margin-bottom: 18px;
+}
+
+.summary { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
+.summary .tile {
+  flex: 1 1 160px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 14px 16px;
+}
+.summary .tile .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+.summary .tile .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.summary .tile.alert .value { color: var(--warn); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.voided td { color: var(--muted); text-decoration: line-through; }
+
+.badge {
+  display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 7px;
+  border-radius: 999px; vertical-align: middle;
+}
+.badge.past-due { background: var(--danger-bg); color: var(--danger); }
+.badge.pctc { background: var(--warn-bg); color: var(--warn); }
+.badge.failed { background: var(--danger-bg); color: var(--danger); }
+
+.money.negative { color: var(--danger); }
+.money.owed { color: var(--danger); font-weight: 700; }
+.money.paidup { color: var(--ok); }
+
+form.inline { display: inline; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 3px; }
+input, select, textarea {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px;
+  font: inherit; background: #fff;
+}
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > div { flex: 1 1 160px; }
+
+button, .btn {
+  display: inline-block; background: var(--brand); color: #fff; border: 0;
+  padding: 9px 14px; border-radius: 7px; font: inherit; font-weight: 600;
+  cursor: pointer; text-decoration: none;
+}
+button:hover, .btn:hover { background: var(--brand-dark); }
+button.secondary, .btn.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+button.danger { background: var(--danger); }
+button.small { padding: 5px 9px; font-size: 13px; }
+
+.flash { background: #e8f5ee; border: 1px solid #bfe3cd; color: var(--brand-dark);
+  padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+.errorbox { background: var(--danger-bg); border: 1px solid #f3c7c3; color: var(--danger);
+  padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+.muted { color: var(--muted); }
+.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar form { display: flex; gap: 8px; align-items: center; }
+.toolbar input, .toolbar select { width: auto; }
+.balance-hero { font-size: 30px; font-weight: 800; }
+.center-narrow { max-width: 420px; margin: 60px auto; }
+details.card summary { cursor: pointer; font-weight: 600; }

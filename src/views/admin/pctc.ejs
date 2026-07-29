@@ -1,0 +1,46 @@
+<%- include('../partials/head') %>
+
+<h1>PCTC worklist</h1>
+<p class="muted">
+  Oklahoma Parental Choice Tax Credit awards the school is holding but cannot deposit
+  until the parent endorses the check. Record the endorsement date once it is signed.
+</p>
+
+<% if (flash) { %><div class="flash"><%= flash %></div><% } %>
+
+<div class="summary">
+  <div class="tile <%= rows.length > 0 ? 'alert' : '' %>">
+    <div class="label">Unendorsed checks</div><div class="value"><%= rows.length %></div>
+  </div>
+  <div class="tile <%= rows.length > 0 ? 'alert' : '' %>">
+    <div class="label">Total held</div><div class="value"><%= money(total) %></div>
+  </div>
+</div>
+
+<div class="card" style="padding:0">
+  <table>
+    <thead><tr><th>Family</th><th>Received</th><th>Year</th><th class="num">Amount</th><th>Endorse</th></tr></thead>
+    <tbody>
+      <% if (rows.length === 0) { %>
+        <tr><td colspan="5" class="muted" style="padding:18px">Nothing held. All PCTC awards are endorsed.</td></tr>
+      <% } %>
+      <% rows.forEach(function(r){ %>
+        <tr>
+          <td><a href="/admin/families/<%= r.family_id %>"><%= r.family_name %></a></td>
+          <td><%= fmtDate(r.received_on) %></td>
+          <td><%= r.school_year %></td>
+          <td class="num"><%= money(r.amount) %></td>
+          <td>
+            <form class="inline" method="post" action="/admin/pctc/<%= r.id %>/endorse">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="date" name="pctc_endorsed_on" style="width:auto" required>
+              <button class="small" type="submit">Mark endorsed</button>
+            </form>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('../partials/foot') %>

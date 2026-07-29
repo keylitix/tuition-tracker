@@ -1,0 +1,85 @@
+<%- include('../partials/head') %>
+
+<h1>Families <span class="muted">— <%= year %></span></h1>
+
+<% if (webhookErrorCount > 0) { %>
+  <div class="errorbox">
+    <%= webhookErrorCount %> unresolved Stripe webhook issue<%= webhookErrorCount === 1 ? '' : 's' %>
+    (e.g. a payment for a customer not matched to a family). Review the Stripe dashboard and family records.
+  </div>
+<% } %>
+
+<div class="summary">
+  <div class="tile"><div class="label">Total billed</div><div class="value"><%= money(summary.total_billed) %></div></div>
+  <div class="tile"><div class="label">Total collected</div><div class="value"><%= money(summary.total_collected) %></div></div>
+  <div class="tile"><div class="label">Outstanding</div><div class="value"><%= money(summary.total_outstanding) %></div></div>
+  <div class="tile <%= summary.unendorsed_pctc_count > 0 ? 'alert' : '' %>">
+    <div class="label">Unendorsed PCTC</div>
+    <div class="value"><%= summary.unendorsed_pctc_count %> · <%= money(summary.unendorsed_pctc_amount) %></div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <form method="get" action="/admin">
+    <input type="search" name="q" value="<%= search %>" placeholder="Search family or student">
+    <select name="year" onchange="this.form.submit()">
+      <% years.forEach(function(y){ %>
+        <option value="<%= y %>" <%= y === year ? 'selected' : '' %>><%= y %></option>
+      <% }); %>
+    </select>
+    <button type="submit">Search</button>
+    <% if (search) { %><a class="btn secondary" href="/admin?year=<%= year %>">Clear</a><% } %>
+  </form>
+</div>
+
+<div class="card" style="padding:0">
+  <table>
+    <thead>
+      <tr>
+        <th>Family</th>
+        <th class="num">Students</th>
+        <th class="num">Charged</th>
+        <th class="num">Paid</th>
+        <th class="num">Balance</th>
+        <th>Flags</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% if (rows.length === 0) { %>
+        <tr><td colspan="6" class="muted" style="padding:18px">No families found for this year.</td></tr>
+      <% } %>
+      <% rows.forEach(function(r){ %>
+        <tr>
+          <td><a href="/admin/families/<%= r.id %>?year=<%= year %>"><%= r.name %></a></td>
+          <td class="num"><%= r.student_count %></td>
+          <td class="num"><%= money(r.charged) %></td>
+          <td class="num"><%= money(r.paid) %></td>
+          <td class="num">
+            <span class="money <%= Number(r.balance) > 0 ? 'owed' : (Number(r.balance) < 0 ? 'negative' : 'paidup') %>">
+              <%= money(r.balance) %>
+            </span>
+          </td>
+          <td>
+            <% if (r.past_due) { %><span class="badge past-due">Past due</span><% } %>
+            <% if (r.unendorsed_pctc_count > 0) { %>
+              <span class="badge pctc" title="School is holding <%= money(r.unendorsed_pctc_amount) %> in unendorsed PCTC awards">
+                PCTC held <%= money(r.unendorsed_pctc_amount) %>
+              </span>
+            <% } %>
+            <% if (r.has_failed_payment) { %><span class="badge failed">Payment failed</span><% } %>
+            <% if (r.awaiting_auth) { %><span class="badge failed" title="Plan created but no payment method on file">Awaiting authorization</span><% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<p class="muted">
+  Exports:
+  <a href="/admin/export/families.csv">families.csv</a> ·
+  <a href="/admin/export/charges.csv">charges.csv</a> ·
+  <a href="/admin/export/payments.csv">payments.csv</a>
+</p>
+
+<%- include('../partials/foot') %>

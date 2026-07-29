@@ -1,0 +1,56 @@
+<%- include('../partials/head') %>
+
+<h1>Your tuition</h1>
+
+<div class="card">
+  <div class="muted">Current balance</div>
+  <div class="balance-hero money <%= balance.balance > 0 ? 'owed' : 'paidup' %>"><%= money(balance.balance) %></div>
+  <div class="muted" style="margin-top:6px">
+    Charged <%= money(balance.charged) %> · Paid <%= money(balance.paid) %>
+  </div>
+  <p class="toolbar" style="margin-top:14px">
+    <a class="btn" href="/portal/statement.pdf">Download statement (PDF)</a>
+    <% if (stripePortalUrl) { %>
+      <a class="btn secondary" href="<%= stripePortalUrl %>" target="_blank" rel="noopener">Update payment method</a>
+    <% } %>
+  </p>
+</div>
+
+<div class="card">
+  <h2>Students &amp; charges</h2>
+  <table>
+    <thead><tr><th>Student</th><th>Description</th><th>Year</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      <% var visibleCharges = charges.filter(function(c){ return !c.voided; }); %>
+      <% if (visibleCharges.length === 0) { %><tr><td colspan="4" class="muted">No charges.</td></tr><% } %>
+      <% visibleCharges.forEach(function(c){ %>
+        <tr>
+          <td><%= c.first_name %> <%= c.last_name %></td>
+          <td><%= c.description %></td>
+          <td><%= c.school_year %></td>
+          <td class="num"><%= money(c.amount) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Payment history</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Method</th><th>Note</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      <% if (payments.length === 0) { %><tr><td colspan="4" class="muted">No payments yet.</td></tr><% } %>
+      <% payments.forEach(function(p){ %>
+        <tr>
+          <td><%= fmtDate(p.received_on) %></td>
+          <td><%= methodLabel(p.method) %></td>
+          <td><%= p.note || '' %></td>
+          <td class="num"><span class="money <%= Number(p.amount) < 0 ? 'negative' : '' %>"><%= money(p.amount) %></span></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</div>
+
+<%- include('../partials/foot') %>

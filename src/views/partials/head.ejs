@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> — Tuition Tracker</title>
+  <link rel="stylesheet" href="/public/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="<%= admin ? '/admin' : (family ? '/portal' : '/') %>">Tuition Tracker</a>
+  <nav>
+    <% if (admin) { %>
+      <a href="/admin">Families</a>
+      <a href="/admin/pctc">PCTC</a>
+      <a href="/admin/export/families.csv">Export</a>
+      <span class="muted" style="color:#dbeee2">|</span>
+      <span><%= admin.displayName %></span>
+      <form method="post" action="/admin/logout">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="link" type="submit">Sign out</button>
+      </form>
+    <% } else if (family) { %>
+      <span><%= family.name %></span>
+      <form method="post" action="/portal/logout">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="link" type="submit">Sign out</button>
+      </form>
+    <% } %>
+  </nav>
+</header>
+<main>

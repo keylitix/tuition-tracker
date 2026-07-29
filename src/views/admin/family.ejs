@@ -1,0 +1,238 @@
+<%- include('../partials/head') %>
+<% var defYear = year || (years[0] || ''); %>
+
+<p class="muted"><a href="/admin?year=<%= year || (years[0] || '') %>">&larr; Families</a></p>
+
+<% if (flash) { %><div class="flash"><%= flash %></div><% } %>
+<% if (error) { %><div class="errorbox"><%= error %></div><% } %>
+
+<h1><%= family.name %></h1>
+
+<div class="summary">
+  <div class="tile"><div class="label">Charged</div><div class="value"><%= money(balance.charged) %></div></div>
+  <div class="tile"><div class="label">Paid</div><div class="value"><%= money(balance.paid) %></div></div>
+  <div class="tile <%= balance.balance > 0 ? 'alert' : '' %>">
+    <div class="label">Balance</div>
+    <div class="value"><%= money(balance.balance) %></div>
+  </div>
+</div>
+
+<p class="toolbar">
+  <a class="btn secondary" href="/admin/families/<%= family.id %>/statement.pdf<%= year ? '?year=' + year : '' %>">Download statement (PDF)</a>
+  <% if (family.stripe_customer_id && stripePortalBase) { %>
+    <a class="btn secondary" href="https://dashboard.stripe.com/customers/<%= family.stripe_customer_id %>" target="_blank" rel="noopener">Open in Stripe</a>
+  <% } %>
+</p>
+
+<!-- Payment plan (spec §7.4) -->
+<div class="card">
+  <h2>Payment plan <span class="muted">— <%= planYear %></span></h2>
+  <% if (family.stripe_subscription_id) { %>
+    <p>
+      Active plan: <strong><%= (planSpecs[family.payment_plan] || {}).label || family.payment_plan %></strong>
+      <% if (family.plan_awaiting_auth) { %><span class="badge failed">Awaiting authorization</span><% } %>
+    </p>
+    <p class="muted">
+      Stripe reference: <code><%= family.stripe_subscription_id %></code><br>
+      Created <%= fmtDate(family.plan_created_at) %>.
+      Changing a plan is a separate, explicit action — cancel it in Stripe first, then create a new one.
+    </p>
+    <% if (family.plan_awaiting_auth && customerPortalUrl) { %>
+      <p>Send the parent this link to add their bank details:
+        <a href="<%= customerPortalUrl %>" target="_blank" rel="noopener"><%= customerPortalUrl %></a></p>
+    <% } %>
+  <% } else if (!family.stripe_customer_id) { %>
+    <p class="muted">Add the family's Stripe customer ID (in Family &amp; contact info below) before creating a plan.</p>
+  <% } else if (planBalance <= 0) { %>
+    <p class="muted">Balance for <%= planYear %> is <%= money(planBalance) %> — nothing to bill. Add charges first.</p>
+  <% } else { %>
+    <p>
+      The plan bills the <strong>remaining balance of <%= money(planBalance) %></strong> for <%= planYear %>
+      — PCTC and other payments are already deducted, so tuition is never double-charged.
+    </p>
+    <form method="post" action="/admin/families/<%= family.id %>/plan"
+          onsubmit="return confirm('Create this plan in Stripe? This writes a subscription/invoice to the live account.');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="school_year" value="<%= planYear %>">
+      <div class="row">
+        <div>
+          <label>Plan</label>
+          <select name="plan" required>
+            <% Object.keys(planSpecs).forEach(function(p){ var pv = planPreviews[p]; %>
+              <option value="<%= p %>">
+                <%= planSpecs[p].label %><% if (pv) { %> —
+                  <% if (pv.cycles === 1) { %><%= money(pv.amountsCents[0]/100) %> once<% }
+                     else { %><%= money(pv.amountsCents[0]/100) %> × <%= pv.cycles %><% if (pv.amountsCents[pv.cycles-1] !== pv.amountsCents[0]) { %> (final <%= money(pv.amountsCents[pv.cycles-1]/100) %>)<% } %><% } %>
+                <% } %>
+              </option>
+            <% }); %>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <button type="submit">Create plan in Stripe</button>
+        </div>
+      </div>
+      <p class="muted" style="margin-top:10px">
+        Set up charges and record any PCTC award <em>before</em> creating the plan — the amount is locked from the balance at creation time.
+      </p>
+    </form>
+  <% } %>
+</div>
+
+<!-- Family info -->
+<details class="card">
+  <summary>Family &amp; contact info</summary>
+  <form method="post" action="/admin/families/<%= family.id %>/edit" style="margin-top:12px">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="row">
+      <div><label>Name</label><input name="name" value="<%= family.name %>" required></div>
+      <div><label>Email</label><input name="email" type="email" value="<%= family.email %>" required></div>
+    </div>
+    <div class="row">
+      <div><label>Phone</label><input name="phone" value="<%= family.phone || '' %>"></div>
+      <div><label>Stripe customer ID</label><input name="stripe_customer_id" value="<%= family.stripe_customer_id || '' %>" placeholder="cus_..."></div>
+    </div>
+    <div style="margin-top:12px"><button type="submit">Save</button></div>
+  </form>
+</details>
+
+<!-- Students -->
+<div class="card">
+  <h2>Students</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Grade</th><th>Year</th><th class="num">Charged</th></tr></thead>
+    <tbody>
+      <% if (students.length === 0) { %><tr><td colspan="4" class="muted">No students yet.</td></tr><% } %>
+      <% students.forEach(function(s){ %>
+        <tr>
+          <td><%= s.first_name %> <%= s.last_name %></td>
+          <td><%= s.grade || '' %></td>
+          <td><%= s.school_year %></td>
+          <td class="num"><%= money(s.charged) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <details style="margin-top:12px">
+    <summary>Add student</summary>
+    <form method="post" action="/admin/families/<%= family.id %>/students" style="margin-top:10px">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="row">
+        <div><label>First name</label><input name="first_name" required></div>
+        <div><label>Last name</label><input name="last_name" required></div>
+        <div><label>Grade</label><input name="grade"></div>
+        <div><label>School year</label><input name="school_year" value="<%= defYear %>" placeholder="2026-2027" required></div>
+      </div>
+      <div style="margin-top:12px"><button type="submit">Add student</button></div>
+    </form>
+  </details>
+</div>
+
+<!-- Charges -->
+<div class="card">
+  <h2>Charges</h2>
+  <table>
+    <thead><tr><th>Description</th><th>Student</th><th>Due</th><th>Year</th><th class="num">Amount</th><th></th></tr></thead>
+    <tbody>
+      <% if (charges.length === 0) { %><tr><td colspan="6" class="muted">No charges yet.</td></tr><% } %>
+      <% charges.forEach(function(c){ %>
+        <tr class="<%= c.voided ? 'voided' : '' %>">
+          <td><%= c.description %></td>
+          <td><%= c.first_name %> <%= c.last_name %></td>
+          <td><%= fmtDate(c.due_date) %></td>
+          <td><%= c.school_year %></td>
+          <td class="num"><%= money(c.amount) %></td>
+          <td class="num">
+            <% if (!c.voided) { %>
+              <form class="inline" method="post" action="/admin/families/<%= family.id %>/charges/<%= c.id %>/void"
+                    onsubmit="return confirm('Void this charge? It stays on record but no longer counts.');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="secondary small" type="submit">Void</button>
+              </form>
+            <% } else { %><span class="muted">voided</span><% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <details style="margin-top:12px">
+    <summary>Add charge</summary>
+    <form method="post" action="/admin/families/<%= family.id %>/charges" style="margin-top:10px">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="row">
+        <div>
+          <label>Student</label>
+          <select name="student_id" required>
+            <% students.forEach(function(s){ %>
+              <option value="<%= s.id %>"><%= s.first_name %> <%= s.last_name %> (<%= s.school_year %>)</option>
+            <% }); %>
+          </select>
+        </div>
+        <div><label>Description</label><input name="description" placeholder="Tuition 2026-2027" required></div>
+      </div>
+      <div class="row">
+        <div><label>Amount</label><input name="amount" inputmode="decimal" placeholder="0.00" required></div>
+        <div><label>Due date</label><input name="due_date" type="date"></div>
+        <div><label>School year</label><input name="school_year" value="<%= defYear %>" required></div>
+      </div>
+      <div style="margin-top:12px"><button type="submit">Add charge</button></div>
+    </form>
+  </details>
+</div>
+
+<!-- Payments -->
+<div class="card">
+  <h2>Payments</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Method</th><th>Note</th><th>Year</th><th class="num">Amount</th></tr></thead>
+    <tbody>
+      <% if (payments.length === 0) { %><tr><td colspan="5" class="muted">No payments yet.</td></tr><% } %>
+      <% payments.forEach(function(p){ %>
+        <tr>
+          <td><%= fmtDate(p.received_on) %></td>
+          <td>
+            <%= methodLabel(p.method) %>
+            <% if (p.method === 'check' && p.check_number) { %><span class="muted">#<%= p.check_number %></span><% } %>
+            <% if (p.method === 'pctc' && !p.pctc_endorsed_on) { %><span class="badge pctc">held</span><% } %>
+          </td>
+          <td><%= p.note || '' %></td>
+          <td><%= p.school_year %></td>
+          <td class="num"><span class="money <%= Number(p.amount) < 0 ? 'negative' : '' %>"><%= money(p.amount) %></span></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+
+  <details style="margin-top:12px" open>
+    <summary>Record payment</summary>
+    <form method="post" action="/admin/families/<%= family.id %>/payments" style="margin-top:10px">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="row">
+        <div>
+          <label>Method</label>
+          <select id="pay-method" name="method" required>
+            <% methods.forEach(function(m){ %>
+              <option value="<%= m %>"><%= methodLabel(m) %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div><label>Amount</label><input name="amount" inputmode="decimal" placeholder="0.00" required></div>
+        <div><label>Date received</label><input name="received_on" type="date"></div>
+        <div><label>School year</label><input name="school_year" value="<%= defYear %>" required></div>
+      </div>
+      <div class="row">
+        <div id="field-check-number" style="display:none"><label>Check number</label><input name="check_number"></div>
+        <div id="field-pctc-endorsed" style="display:none">
+          <label>Endorsement date <span class="muted">(leave blank if still held)</span></label>
+          <input name="pctc_endorsed_on" type="date">
+        </div>
+        <div><label>Note</label><input name="note" placeholder="Optional"></div>
+      </div>
+      <p class="muted" style="margin:10px 0 0">Refunds: choose <em>Refund</em> and enter a negative amount.</p>
+      <div style="margin-top:12px"><button type="submit">Record payment</button></div>
+    </form>
+  </details>
+</div>
+
+<script src="/public/js/family.js"></script>
+<%- include('../partials/foot') %>

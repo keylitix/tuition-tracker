@@ -1,0 +1,24 @@
+# Local-development SQL Server so the app runs before deploy.
+# Production is SQL Server on SmarterASP.NET — this only mirrors it locally.
+#   docker compose up -d      # start
+#   npm run migrate && npm run seed
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: tuition-sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Your_strong_Passw0rd!"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - tuition_mssql_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  tuition_mssql_data:

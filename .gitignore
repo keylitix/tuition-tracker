@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Secrets & environment — NEVER commit
+.env
+.env.*
+!.env.example
+web.config
+
+# Logs
+*.log
+npm-debug.log*
+iisnode/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build / temp
+dist/
+tmp/
+*.tmp

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  iisnode configuration for SmarterASP.NET (Windows shared hosting).
+  Copy to web.config and fill in the appSettings. web.config is gitignored
+  because it holds secrets — never commit the filled-in copy.
+
+  iisnode recycles the app pool on idle: the app must hold NO in-memory state
+  between requests (see src/db/pool.js and the SQL-backed session store).
+-->
+<configuration>
+  <appSettings>
+    <add key="NODE_ENV" value="production" />
+    <add key="APP_BASE_URL" value="https://tuition.example.com" />
+    <add key="SESSION_SECRET" value="REPLACE_WITH_LONG_RANDOM_STRING" />
+
+    <add key="DB_SERVER" value="REPLACE" />
+    <add key="DB_PORT" value="1433" />
+    <add key="DB_NAME" value="REPLACE" />
+    <add key="DB_USER" value="REPLACE" />
+    <add key="DB_PASSWORD" value="REPLACE" />
+    <add key="DB_ENCRYPT" value="true" />
+    <add key="DB_TRUST_SERVER_CERT" value="true" />
+
+    <add key="STRIPE_SECRET_KEY" value="REPLACE" />
+    <add key="STRIPE_WEBHOOK_SECRET" value="REPLACE" />
+    <add key="STRIPE_CUSTOMER_PORTAL_URL" value="REPLACE" />
+
+    <add key="SMTP_HOST" value="REPLACE" />
+    <add key="SMTP_PORT" value="587" />
+    <add key="SMTP_SECURE" value="false" />
+    <add key="SMTP_USER" value="REPLACE" />
+    <add key="SMTP_PASSWORD" value="REPLACE" />
+    <add key="MAIL_FROM" value="The Farm Academy &lt;office@example.com&gt;" />
+
+    <add key="SCHOOL_NAME" value="The Farm Academy" />
+    <add key="SCHOOL_ADDRESS" value="Oklahoma" />
+  </appSettings>
+
+  <system.webServer>
+    <!-- All requests are handled by our Node entry point -->
+    <handlers>
+      <add name="iisnode" path="src/server.js" verb="*" modules="iisnode" />
+    </handlers>
+
+    <rewrite>
+      <rules>
+        <!-- Force HTTPS (spec §9) -->
+        <rule name="HTTPS redirect" stopProcessing="true">
+          <match url="(.*)" />
+          <conditions>
+            <add input="{HTTPS}" pattern="off" ignoreCase="true" />
+          </conditions>
+          <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+        </rule>
+
+        <!-- Serve static assets directly -->
+        <rule name="StaticContent" stopProcessing="true">
+          <match url="^public/.*" />
+          <action type="None" />
+        </rule>
+
+        <!-- Everything else to Node -->
+        <rule name="DynamicContent">
+          <conditions>
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+          </conditions>
+          <action type="Rewrite" url="src/server.js" />
+        </rule>
+      </rules>
+    </rewrite>
+
+    <iisnode
+      nodeProcessCountPerApplication="1"
+      watchedFiles="web.config;*.js"
+      loggingEnabled="true"
+      devErrorsEnabled="false" />
+
+    <httpErrors existingResponse="PassThrough" />
+  </system.webServer>
+</configuration>
