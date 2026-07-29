@@ -44,6 +44,69 @@ async function detailViewModel(family, year) {
   return { students, charges, payments, balance };
 }
 
+// New-family form. MUST be declared before '/:id' so "new" is not read as an id.
+router.get('/new', (req, res) => {
+  res.render('admin/family-new', {
+    title: 'New family',
+    defaultYear: currentSchoolYear(),
+    error: null,
+    values: {},
+  });
+});
+
+// Create a family (+ optional first student), then go to its detail page.
+router.post('/', async (req, res, next) => {
+  const values = {
+    name: String(req.body.name || '').trim(),
+    email: String(req.body.email || '').trim().toLowerCase(),
+    phone: String(req.body.phone || '').trim(),
+    stripe_customer_id: String(req.body.stripe_customer_id || '').trim(),
+    external_id: String(req.body.external_id || '').trim(),
+    first_name: String(req.body.first_name || '').trim(),
+    last_name: String(req.body.last_name || '').trim(),
+    grade: String(req.body.grade || '').trim(),
+    school_year: String(req.body.school_year || '').trim(),
+  };
+  const reshow = (msg) => res.status(400).render('admin/family-new', {
+    title: 'New family', defaultYear: currentSchoolYear(), error: msg, values,
+  });
+  try {
+    if (!values.name) return reshow('Family name is required.');
+    if (!values.email) return reshow('Family email is required.');
+    // If any student field is filled, require the essentials.
+    const wantsStudent = values.first_name || values.last_name;
+    if (wantsStudent && (!values.first_name || !values.last_name || !values.school_year)) {
+      return reshow('To add a first student, enter first name, last name, and school year.');
+    }
+
+    const { id } = await q.createFamily({
+      externalId: values.external_id,
+      name: values.name,
+      email: values.email,
+      phone: values.phone,
+      stripeCustomerId: values.stripe_customer_id,
+    });
+
+    if (wantsStudent) {
+      await q.addStudent({
+        externalId: '', // auto STU-####
+        familyId: id,
+        firstName: values.first_name,
+        lastName: values.last_name,
+        grade: values.grade,
+        schoolYear: values.school_year,
+      });
+    }
+    res.redirect(`/admin/families/${id}?ok=Family+created`);
+  } catch (err) {
+    // Duplicate external_id -> friendly message rather than a 500.
+    if (err.number === 2627 || err.number === 2601) {
+      return reshow('That external ID is already in use. Leave it blank to auto-generate.');
+    }
+    next(err);
+  }
+});
+
 // Family detail (spec §6.2)
 router.get('/:id', loadFamily, async (req, res, next) => {
   try {

@@ -15,6 +15,17 @@ const config = require('../config');
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
+function poolConfig(database) {
+  return {
+    server: config.db.server,
+    port: config.db.port,
+    database,
+    user: config.db.user,
+    password: config.db.password,
+    options: config.db.options,
+  };
+}
+
 // mssql sends one batch per query() call and does not understand the `GO`
 // separator (that is a client tool directive). Split the file on standalone GO.
 function splitBatches(text) {
@@ -24,37 +35,40 @@ function splitBatches(text) {
     .filter((b) => b.length > 0);
 }
 
-async function ensureDatabase() {
-  const master = await sql.connect({
-    server: config.db.server,
-    port: config.db.port,
-    database: 'master',
-    user: config.db.user,
-    password: config.db.password,
-    options: config.db.options,
-  });
-  // DB name comes from config, not user input; still validate to be safe.
+// Create the target database if we can. On shared hosting (SmarterASP.NET) the
+// login is scoped to a single, pre-created database and has NO access to master —
+// that is expected, so a failure here is a warning, not an error. We use a
+// dedicated ConnectionPool (not the global sql.connect) to avoid the mssql
+// singleton returning the master pool when we later connect to the target DB.
+async function tryEnsureDatabase() {
   if (!/^[A-Za-z0-9_]+$/.test(config.db.database)) {
     throw new Error(`Unsafe database name: ${config.db.database}`);
   }
-  await master.request().query(
-    `IF DB_ID(N'${config.db.database}') IS NULL CREATE DATABASE [${config.db.database}];`
-  );
-  await master.close();
+  const master = new sql.ConnectionPool(poolConfig('master'));
+  try {
+    await master.connect();
+    await master.request().query(
+      `IF DB_ID(N'${config.db.database}') IS NULL CREATE DATABASE [${config.db.database}];`
+    );
+    console.log(`> Database "${config.db.database}" is present.`);
+  } finally {
+    await master.close().catch(() => {});
+  }
 }
 
 async function run() {
-  console.log(`> Ensuring database "${config.db.database}" exists...`);
-  await ensureDatabase();
+  console.log(`> Checking database "${config.db.database}"...`);
+  try {
+    await tryEnsureDatabase();
+  } catch (err) {
+    console.warn(
+      `> Could not create/verify via master (${err.message.split('\n')[0]}).`
+    );
+    console.warn(`> Assuming "${config.db.database}" already exists (normal on shared hosting).`);
+  }
 
-  const pool = await sql.connect({
-    server: config.db.server,
-    port: config.db.port,
-    database: config.db.database,
-    user: config.db.user,
-    password: config.db.password,
-    options: config.db.options,
-  });
+  const pool = new sql.ConnectionPool(poolConfig(config.db.database));
+  await pool.connect();
 
   const files = fs
     .readdirSync(MIGRATIONS_DIR)

@@ -13,6 +13,7 @@
     "migrate": "node src/db/migrate.js",
     "seed": "node src/db/seed.js",
     "createadmin": "node src/scripts/create-admin.js",
+    "import": "node src/scripts/import.js",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "test": "node --test"
@@ -20,6 +21,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "connect-mssql-v2": "^6.0.0",
+    "csv-parse": "^5.5.6",
     "csv-stringify": "^6.4.6",
     "dotenv": "^16.4.5",
     "ejs": "^3.1.10",

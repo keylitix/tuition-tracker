@@ -19,7 +19,7 @@
   </div>
 </div>
 
-<div class="toolbar">
+<div class="toolbar" style="justify-content:space-between">
   <form method="get" action="/admin">
     <input type="search" name="q" value="<%= search %>" placeholder="Search family or student">
     <select name="year" onchange="this.form.submit()">
@@ -30,6 +30,10 @@
     <button type="submit">Search</button>
     <% if (search) { %><a class="btn secondary" href="/admin?year=<%= year %>">Clear</a><% } %>
   </form>
+  <span>
+    <a class="btn secondary" href="/admin/import">Import CSV</a>
+    <a class="btn" href="/admin/families/new">+ New family</a>
+  </span>
 </div>
 
 <div class="card" style="padding:0">

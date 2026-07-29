@@ -1,0 +1,41 @@
+<%- include('../partials/head') %>
+
+<p class="muted"><a href="/admin">&larr; Families</a></p>
+<h1>New family</h1>
+
+<% if (error) { %><div class="errorbox"><%= error %></div><% } %>
+
+<form method="post" action="/admin/families">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <div class="card">
+    <h2>Family</h2>
+    <div class="row">
+      <div><label>Name *</label><input name="name" value="<%= values.name || '' %>" required autofocus></div>
+      <div><label>Email *</label><input name="email" type="email" value="<%= values.email || '' %>" required></div>
+    </div>
+    <div class="row">
+      <div><label>Phone</label><input name="phone" value="<%= values.phone || '' %>"></div>
+      <div><label>Stripe customer ID</label><input name="stripe_customer_id" value="<%= values.stripe_customer_id || '' %>" placeholder="cus_… (optional)"></div>
+      <div><label>External ID <span class="muted">(optional — auto FAM-####)</span></label><input name="external_id" value="<%= values.external_id || '' %>" placeholder="auto"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>First student <span class="muted">(optional — you can add more later)</span></h2>
+    <div class="row">
+      <div><label>First name</label><input name="first_name" value="<%= values.first_name || '' %>"></div>
+      <div><label>Last name</label><input name="last_name" value="<%= values.last_name || '' %>"></div>
+      <div><label>Grade</label><input name="grade" value="<%= values.grade || '' %>"></div>
+      <div><label>School year</label><input name="school_year" value="<%= values.school_year || defaultYear %>" placeholder="<%= defaultYear %>"></div>
+    </div>
+    <p class="muted" style="margin-top:8px">Charges and payments are added on the family page after it's created.</p>
+  </div>
+
+  <div style="margin-bottom:24px">
+    <button type="submit">Create family</button>
+    <a class="btn secondary" href="/admin">Cancel</a>
+  </div>
+</form>
+
+<%- include('../partials/foot') %>

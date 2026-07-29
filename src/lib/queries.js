@@ -226,6 +226,56 @@ async function getFamilyBalance(familyId, year = null) {
 /* Admin — mutations                                                   */
 /* ------------------------------------------------------------------ */
 
+// Next sequential external_id like FAM-0004 / STU-0012. Table is whitelisted (not
+// user input) so it is safe to inline. Not collision-proof under high concurrency
+// — callers retry on the UNIQUE violation — but fine for office-scale entry.
+const EXTID_TABLES = { families: 'families', students: 'students' };
+async function nextExternalId(table, prefix) {
+  const t = EXTID_TABLES[table];
+  if (!t) throw new Error(`nextExternalId: unknown table ${table}`);
+  const r = await query(
+    `SELECT ISNULL(MAX(TRY_CAST(SUBSTRING(external_id, @plen + 1, 20) AS INT)), 0) + 1 AS n
+       FROM ${t} WHERE external_id LIKE @like;`,
+    {
+      plen: { type: sql.Int, value: prefix.length },
+      like: { type: sql.NVarChar(60), value: `${prefix}[0-9]%` },
+    }
+  );
+  return `${prefix}${String(r.recordset[0].n).padStart(4, '0')}`;
+}
+
+// Create a family. external_id auto-generated (FAM-####) if not supplied.
+async function createFamily({ externalId, name, email, phone, stripeCustomerId }) {
+  const ext = (externalId && externalId.trim()) || (await nextExternalId('families', 'FAM-'));
+  const r = await query(
+    `INSERT INTO families (external_id, name, email, phone, stripe_customer_id)
+     OUTPUT INSERTED.id
+     VALUES (@ext, @name, @email, @phone, @scid);`,
+    {
+      ext: { type: sql.NVarChar(50), value: ext },
+      name: { type: sql.NVarChar(200), value: name },
+      email: { type: sql.NVarChar(255), value: email },
+      phone: { type: sql.NVarChar(30), value: phone || null },
+      scid: { type: sql.NVarChar(50), value: stripeCustomerId || null },
+    }
+  );
+  return { id: r.recordset[0].id, externalId: ext };
+}
+
+async function findFamilyByExternalId(externalId) {
+  const r = await query('SELECT * FROM families WHERE external_id = @ext;', {
+    ext: { type: sql.NVarChar(50), value: externalId },
+  });
+  return r.recordset[0] || null;
+}
+
+async function findStudentByExternalId(externalId) {
+  const r = await query('SELECT * FROM students WHERE external_id = @ext;', {
+    ext: { type: sql.NVarChar(50), value: externalId },
+  });
+  return r.recordset[0] || null;
+}
+
 async function updateFamily(familyId, { name, email, phone, stripe_customer_id }) {
   await query(
     `UPDATE families
@@ -293,12 +343,13 @@ async function recordPayment({
 }
 
 async function addStudent({ externalId, familyId, firstName, lastName, grade, schoolYear }) {
+  const ext = (externalId && externalId.trim()) || (await nextExternalId('students', 'STU-'));
   const r = await query(
     `INSERT INTO students (external_id, family_id, first_name, last_name, grade, school_year)
      OUTPUT INSERTED.id
      VALUES (@externalId, @familyId, @firstName, @lastName, @grade, @schoolYear);`,
     {
-      externalId: { type: sql.NVarChar(50), value: externalId },
+      externalId: { type: sql.NVarChar(50), value: ext },
       familyId: { type: sql.Int, value: familyId },
       firstName: { type: sql.NVarChar(100), value: firstName },
       lastName: { type: sql.NVarChar(100), value: lastName },
@@ -381,10 +432,14 @@ module.exports = {
   getRosterSummary,
   getFamily,
   getFamilyByEmail,
+  findFamilyByExternalId,
+  findStudentByExternalId,
   getStudentsForFamily,
   getChargesForFamily,
   getPaymentsForFamily,
   getFamilyBalance,
+  nextExternalId,
+  createFamily,
   updateFamily,
   setPlan,
   clearAwaitingAuth,

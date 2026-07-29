@@ -1,0 +1,50 @@
+<%- include('../partials/head') %>
+
+<p class="muted"><a href="/admin">&larr; Families</a></p>
+<h1>Import families (CSV)</h1>
+
+<% if (typeof error !== 'undefined' && error) { %><div class="errorbox"><%= error %></div><% } %>
+
+<% if (result) { %>
+  <div class="card">
+    <h2>Import result</h2>
+    <div class="summary">
+      <div class="tile"><div class="label">Rows processed</div><div class="value"><%= result.rowsProcessed %></div></div>
+      <div class="tile"><div class="label">Families</div><div class="value"><%= result.familiesCreated %> new</div><div class="muted"><%= result.familiesMatched %> matched</div></div>
+      <div class="tile"><div class="label">Students</div><div class="value"><%= result.studentsCreated %> new</div><div class="muted"><%= result.studentsSkipped %> existing</div></div>
+      <div class="tile"><div class="label">Charges</div><div class="value"><%= result.chargesCreated %> new</div><div class="muted"><%= result.chargesSkipped %> existing</div></div>
+    </div>
+    <% if (result.errors.length) { %>
+      <div class="errorbox">
+        <strong><%= result.errors.length %> row issue(s)</strong> — those rows were skipped, the rest imported:
+        <ul style="margin:8px 0 0">
+          <% result.errors.forEach(function(e){ %><li>Row <%= e.row %>: <%= e.message %></li><% }); %>
+        </ul>
+      </div>
+    <% } else { %>
+      <div class="flash">No errors. <a href="/admin">View the roster &rarr;</a></div>
+    <% } %>
+  </div>
+<% } %>
+
+<div class="card">
+  <h2>Paste CSV</h2>
+  <p class="muted">
+    First row must be a header. Columns (any order; extras ignored):
+    <code>family_external_id, family_name, family_email, family_phone, stripe_customer_id,
+    student_external_id, student_first_name, student_last_name, grade, school_year,
+    charge_description, charge_amount, charge_due_date</code>.
+    One row per student; repeat the family columns for siblings. Re-running is safe —
+    existing families/students/charges are matched, not duplicated.
+  </p>
+  <form method="post" action="/admin/import">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <textarea name="csv" rows="12" style="font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="family_name,family_email,student_first_name,student_last_name,school_year,charge_description,charge_amount
+Doe Family,doe@example.com,Jane,Doe,2026-2027,Tuition 2026-2027,6000
+Doe Family,doe@example.com,John,Doe,2026-2027,Tuition 2026-2027,6000"><%= csv %></textarea>
+    <div style="margin-top:12px"><button type="submit">Import</button></div>
+  </form>
+  <p class="muted">For large files, use the CLI instead: <code>npm run import -- path\to\file.csv</code></p>
+</div>
+
+<%- include('../partials/foot') %>
