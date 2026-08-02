@@ -278,8 +278,9 @@ router.post('/:id/plan', loadFamily, async (req, res, next) => {
     if (!plans.isValidPlan(plan)) {
       return res.redirect(back('err=' + encodeURIComponent('Choose a valid payment plan.')));
     }
-    // Guardrail: never silently replace an existing plan.
-    if (req.family.stripe_subscription_id) {
+    // Guardrail: never silently replace an existing plan (subscription or annual
+    // invoice — payment_plan is set for both).
+    if (req.family.payment_plan) {
       return res.redirect(back('err=' + encodeURIComponent('This family already has a plan. Changing it is a separate, explicit action.')));
     }
     // Need a Stripe customer to bill.
@@ -312,6 +313,7 @@ router.post('/:id/plan', loadFamily, async (req, res, next) => {
     await q.setPlan(req.family.id, {
       plan,
       subscriptionId: result.subscriptionId,
+      invoiceId: result.invoiceId,
       awaitingAuth: result.awaitingAuth,
     });
 

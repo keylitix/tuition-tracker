@@ -72,16 +72,10 @@ async function createPlan({ stripe, customerId, familyId, schoolYear, plan, bala
   const hasMethod = await customerHasPaymentMethod(stripe, customerId);
 
   if (computed.object === 'invoice') {
-    // Annual: a single one-off invoice for the full balance.
-    await stripe.invoiceItems.create(
-      {
-        customer: customerId,
-        amount: computed.amountsCents[0],
-        currency: 'usd',
-        description: `Tuition ${schoolYear} — paid in full`,
-      },
-      { idempotencyKey: `${idemKey}-item` }
-    );
+    // Annual: a single one-off invoice for the full balance. Create the invoice
+    // FIRST, then attach the line item to it explicitly (a freshly created
+    // invoice does not auto-pull pending invoice items in the current API), then
+    // finalize so Stripe attempts the charge.
     const invoice = await stripe.invoices.create(
       {
         customer: customerId,
@@ -91,30 +85,41 @@ async function createPlan({ stripe, customerId, familyId, schoolYear, plan, bala
       },
       { idempotencyKey: `${idemKey}-invoice` }
     );
+    await stripe.invoiceItems.create(
+      {
+        customer: customerId,
+        invoice: invoice.id,
+        amount: computed.amountsCents[0],
+        currency: 'usd',
+        description: `Tuition ${schoolYear} — paid in full`,
+      },
+      { idempotencyKey: `${idemKey}-item` }
+    );
     await stripe.invoices.finalizeInvoice(invoice.id, {}, { idempotencyKey: `${idemKey}-finalize` });
     return { invoiceId: invoice.id, subscriptionId: null, awaitingAuth: !hasMethod, computed };
   }
 
   // monthly / semester: a subscription SCHEDULE so we can bill the remainder on
   // the final cycle exactly and stop after N cycles (end_behavior: cancel).
+  //
+  // Schedule phase price_data requires an existing Product id (unlike a plain
+  // subscription, it does NOT accept inline product_data), so create one first.
+  const product = await stripe.products.create(
+    { name: `Tuition ${schoolYear}` },
+    { idempotencyKey: `${idemKey}-product` }
+  );
   const recurring = { interval: 'month', interval_count: computed.intervalMonths };
+  const priceItem = (cents) => ({
+    items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: cents, recurring }, quantity: 1 }],
+  });
   const uniqueAmounts = new Set(computed.amountsCents);
   const phases = [];
   if (uniqueAmounts.size === 1) {
-    phases.push({
-      items: [{ price_data: { currency: 'usd', product_data: { name: `Tuition ${schoolYear}` }, unit_amount: computed.amountsCents[0], recurring }, quantity: 1 }],
-      iterations: computed.cycles,
-    });
+    phases.push({ ...priceItem(computed.amountsCents[0]), iterations: computed.cycles });
   } else {
     // First (cycles-1) cycles at the base amount, final cycle carries the remainder.
-    phases.push({
-      items: [{ price_data: { currency: 'usd', product_data: { name: `Tuition ${schoolYear}` }, unit_amount: computed.amountsCents[0], recurring }, quantity: 1 }],
-      iterations: computed.cycles - 1,
-    });
-    phases.push({
-      items: [{ price_data: { currency: 'usd', product_data: { name: `Tuition ${schoolYear} (final)` }, unit_amount: computed.amountsCents[computed.cycles - 1], recurring }, quantity: 1 }],
-      iterations: 1,
-    });
+    phases.push({ ...priceItem(computed.amountsCents[0]), iterations: computed.cycles - 1 });
+    phases.push({ ...priceItem(computed.amountsCents[computed.cycles - 1]), iterations: 1 });
   }
 
   const schedule = await stripe.subscriptionSchedules.create(

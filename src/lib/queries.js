@@ -362,11 +362,12 @@ async function addStudent({ externalId, familyId, firstName, lastName, grade, sc
 
 // Record the result of a Stripe plan creation (spec §7.4). Called after the
 // Stripe objects are created; the ledger itself was already committed earlier.
-async function setPlan(familyId, { plan, subscriptionId, awaitingAuth }) {
+async function setPlan(familyId, { plan, subscriptionId, invoiceId, awaitingAuth }) {
   await query(
     `UPDATE families
         SET payment_plan = @plan,
             stripe_subscription_id = @sub,
+            stripe_invoice_id = @inv,
             plan_created_at = SYSUTCDATETIME(),
             plan_awaiting_auth = @awaiting
       WHERE id = @id;`,
@@ -374,6 +375,7 @@ async function setPlan(familyId, { plan, subscriptionId, awaitingAuth }) {
       id: { type: sql.Int, value: familyId },
       plan: { type: sql.NVarChar(20), value: plan },
       sub: { type: sql.NVarChar(50), value: subscriptionId || null },
+      inv: { type: sql.NVarChar(50), value: invoiceId || null },
       awaiting: { type: sql.Bit, value: awaitingAuth ? 1 : 0 },
     }
   );
