@@ -169,17 +169,111 @@ async function handleChargeRefunded(run, charge, ctx, deferred) {
   );
 }
 
+async function findFamilyById(run, id) {
+  if (!Number.isInteger(id)) return null;
+  const r = await run('SELECT TOP 1 * FROM families WHERE id = @id;', { id: { type: sql.Int, value: id } });
+  return r.recordset[0] || null;
+}
+
+function addMonthsUnix(unixSeconds, months) {
+  const d = new Date(unixSeconds * 1000);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  return Math.floor(d.getTime() / 1000);
+}
+
+// Parent finished Stripe Checkout (ACH). Link the Stripe customer to the family;
+// for autopay (subscription mode) record the plan and schedule cancellation after
+// the right number of cycles. The one-time balance payment itself is recorded on
+// payment_intent.succeeded (below), once the ACH debit actually settles.
+async function handleCheckoutCompleted(run, session, ctx, deferred, stripeClient) {
+  const familyId = parseInt((session.metadata && session.metadata.family_id) || '', 10);
+  const family = await findFamilyById(run, familyId);
+  if (!family) {
+    deferred.warnings.push({ ...ctx, message: `checkout.session.completed with no matching family (metadata.family_id=${session.metadata && session.metadata.family_id}).`, payload: session });
+    return;
+  }
+
+  // Link the Stripe customer that Checkout created/used.
+  if (session.customer && !family.stripe_customer_id) {
+    await run(`UPDATE families SET stripe_customer_id = @cid WHERE id = @fid AND stripe_customer_id IS NULL;`, {
+      cid: { type: sql.NVarChar(50), value: session.customer },
+      fid: { type: sql.Int, value: family.id },
+    });
+  }
+
+  if (session.mode === 'subscription' && session.subscription) {
+    const plan = (session.metadata && session.metadata.plan) || 'monthly';
+    await run(
+      `UPDATE families SET payment_plan = @plan, stripe_subscription_id = @sub,
+              plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0
+        WHERE id = @fid;`,
+      {
+        plan: { type: sql.NVarChar(20), value: plan },
+        sub: { type: sql.NVarChar(50), value: session.subscription },
+        fid: { type: sql.Int, value: family.id },
+      }
+    );
+    // Stop the subscription after the right number of cycles (post-commit so the
+    // DB transaction doesn't wait on a Stripe API call).
+    const cycles = parseInt((session.metadata && session.metadata.cycles) || '0', 10);
+    const intervalMonths = parseInt((session.metadata && session.metadata.interval_months) || '1', 10);
+    if (stripeClient && cycles > 0) {
+      deferred.actions.push(async () => {
+        const sub = await stripeClient.subscriptions.retrieve(session.subscription);
+        const start = sub.current_period_start || sub.start_date;
+        if (start) {
+          await stripeClient.subscriptions.update(session.subscription, {
+            cancel_at: addMonthsUnix(start, cycles * intervalMonths),
+          });
+        }
+      });
+    }
+  }
+}
+
+// A PaymentIntent succeeded. We only act on our one-time balance payments
+// (metadata.kind='balance'); subscription/invoice charges are recorded via
+// invoice.paid instead, so this avoids double-counting.
+async function handlePaymentIntentSucceeded(run, pi, ctx, deferred) {
+  if (!pi.metadata || pi.metadata.kind !== 'balance') return;
+  const family = await findFamilyById(run, parseInt(pi.metadata.family_id || '', 10));
+  if (!family) {
+    deferred.warnings.push({ ...ctx, message: `payment_intent.succeeded (balance) with no matching family (${pi.metadata.family_id}).`, payload: pi });
+    return;
+  }
+  const amount = (pi.amount_received || pi.amount || 0) / 100;
+  const schoolYear = pickSchoolYear(pi.metadata);
+  try {
+    await run(
+      `INSERT INTO payments (family_id, amount, method, received_on, school_year, note, stripe_payment_intent_id)
+       VALUES (@fid, @amount, 'ach', CAST(SYSUTCDATETIME() AS DATE), @year, @note, @pi);`,
+      {
+        fid: { type: sql.Int, value: family.id },
+        amount: { type: sql.Decimal(10, 2), value: amount },
+        year: { type: sql.NVarChar(9), value: schoolYear },
+        note: { type: sql.NVarChar(500), value: 'Online payment (bank/ACH)' },
+        pi: { type: sql.NVarChar(50), value: pi.id },
+      }
+    );
+  } catch (err) {
+    if (err.number === 2627 || err.number === 2601) return; // already recorded
+    throw err;
+  }
+}
+
 // Dispatch table.
 const HANDLERS = {
   'invoice.paid': handleInvoicePaid,
   'invoice.payment_failed': handleInvoicePaymentFailed,
   'charge.refunded': handleChargeRefunded,
+  'checkout.session.completed': handleCheckoutCompleted,
+  'payment_intent.succeeded': handlePaymentIntentSucceeded,
 };
 
 // Entry point. Claim + handle in one transaction; log warnings after commit.
 async function processEvent(event, stripeClient) {
   const ctx = { eventId: event.id, eventType: event.type };
-  const deferred = { warnings: [] };
+  const deferred = { warnings: [], actions: [] };
 
   const result = await withTransaction(async (run) => {
     // Claim first (spec §7). A duplicate PK means already processed -> skip.
@@ -201,6 +295,13 @@ async function processEvent(event, stripeClient) {
   // Post-commit side effects: warnings must survive even a successful commit.
   for (const w of deferred.warnings) {
     try { await logWebhookError(w); } catch (_) { /* best effort */ }
+  }
+  // Post-commit Stripe calls (e.g. scheduling autopay cancellation) — never held
+  // inside the DB transaction. Failures are logged, not fatal (event stays claimed).
+  if (!result.duplicate) {
+    for (const action of deferred.actions) {
+      try { await action(); } catch (e) { console.error('Post-commit webhook action failed:', e.message); }
+    }
   }
   return result;
 }

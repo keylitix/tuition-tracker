@@ -2,16 +2,44 @@
 
 <h1>Your tuition</h1>
 
+<% if (flash) { %><div class="flash"><%= flash %></div><% } %>
+<% if (error) { %><div class="errorbox"><%= error %></div><% } %>
+
 <div class="card">
   <div class="muted">Current balance</div>
   <div class="balance-hero money <%= balance.balance > 0 ? 'owed' : 'paidup' %>"><%= money(balance.balance) %></div>
   <div class="muted" style="margin-top:6px">
     Charged <%= money(balance.charged) %> · Paid <%= money(balance.paid) %>
   </div>
+
+  <% if (balance.balance > 0) { %>
+    <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <!-- Pay full balance now (one-time ACH) -->
+      <form method="post" action="/portal/pay" style="margin:0">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit">Pay <%= money(balance.balance) %> now by bank (ACH)</button>
+      </form>
+
+      <!-- Set up recurring ACH autopay -->
+      <form method="post" action="/portal/autopay" style="margin:0;display:flex;gap:8px;align-items:center">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <span class="muted">or autopay:</span>
+        <select name="plan" style="width:auto">
+          <option value="monthly">Monthly — 10 payments</option>
+          <option value="semester">Semester — 2 payments</option>
+        </select>
+        <button class="secondary" type="submit">Set up autopay</button>
+      </form>
+    </div>
+    <p class="muted" style="margin-top:8px">
+      Payments are handled securely by Stripe. Bank (ACH) debits take a few business days to clear.
+    </p>
+  <% } %>
+
   <p class="toolbar" style="margin-top:14px">
-    <a class="btn" href="/portal/statement.pdf">Download statement (PDF)</a>
-    <% if (stripePortalUrl) { %>
-      <a class="btn secondary" href="<%= stripePortalUrl %>" target="_blank" rel="noopener">Update payment method</a>
+    <a class="btn secondary" href="/portal/statement.pdf">Download statement (PDF)</a>
+    <% if (hasStripeCustomer) { %>
+      <a class="btn secondary" href="/portal/billing">Manage bank details</a>
     <% } %>
   </p>
 </div>
