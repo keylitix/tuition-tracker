@@ -41,6 +41,22 @@ router.post('/tuition', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+// Re-price every active family to the current standard tuition for a year.
+router.post('/tuition/apply-all', async (req, res, next) => {
+  try {
+    const year = String(req.body.school_year || '').trim();
+    if (!/^\d{4}-\d{4}$/.test(year)) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('Choose a valid school year.'));
+    }
+    const t = await q.applyStandardTuitionToAll(year, req.session.admin.id);
+    if (t.noRate) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent(`Set a tuition rate for ${year} first.`));
+    }
+    const msg = `Synced ${year}: ${t.added} added, ${t.repriced} re-priced, ${t.unchanged} already current across ${t.families} families.`;
+    res.redirect('/admin/settings?ok=' + encodeURIComponent(msg));
+  } catch (err) { next(err); }
+});
+
 // Add an optional item to the catalog.
 router.post('/items', async (req, res, next) => {
   try {

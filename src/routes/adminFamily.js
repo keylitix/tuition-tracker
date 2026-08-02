@@ -99,7 +99,7 @@ router.post('/', async (req, res, next) => {
       });
       // Start them at full standard tuition if a rate is configured for the year.
       const applied = await q.applyStandardTuition(id, values.school_year, req.session.admin.id);
-      if (applied.applied > 0) tuitionNote = ` — started at standard tuition (${'$'}${Number(applied.rate).toFixed(2)})`;
+      if (applied.added > 0) tuitionNote = ` — started at standard tuition (${'$'}${Number(applied.rate).toFixed(2)})`;
     }
     res.redirect(`/admin/families/${id}?ok=` + encodeURIComponent(`Family created${tuitionNote}`));
   } catch (err) {
@@ -179,14 +179,16 @@ router.post('/:id/students', loadFamily, async (req, res, next) => {
 router.post('/:id/apply-tuition', loadFamily, async (req, res, next) => {
   try {
     const year = String(req.body.school_year || '').trim() || currentSchoolYear();
-    const result = await q.applyStandardTuition(req.family.id, year, req.session.admin.id);
+    const r = await q.applyStandardTuition(req.family.id, year, req.session.admin.id);
     const back = `/admin/families/${req.family.id}?year=${encodeURIComponent(year)}`;
-    if (result.noRate) {
+    if (r.noRate) {
       return res.redirect(back + '&err=' + encodeURIComponent(`No standard tuition set for ${year}. Set it under Settings first.`));
     }
-    const msg = result.applied === 0
-      ? 'All students already have standard tuition for that year.'
-      : `Applied standard tuition to ${result.applied} student(s).`;
+    const parts = [];
+    if (r.added) parts.push(`${r.added} added`);
+    if (r.repriced) parts.push(`${r.repriced} re-priced to ${'$'}${Number(r.rate).toFixed(2)}`);
+    if (r.unchanged) parts.push(`${r.unchanged} already current`);
+    const msg = parts.length ? `Standard tuition: ${parts.join(', ')}.` : 'No students to apply tuition to.';
     res.redirect(back + '&ok=' + encodeURIComponent(msg));
   } catch (err) { next(err); }
 });

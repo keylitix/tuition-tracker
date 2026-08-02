@@ -11,18 +11,27 @@
   <h2>Standard tuition <span class="muted">(per student, per year)</span></h2>
   <p class="muted">Every family starts at this amount per enrolled student. Scholarships, tax credits, and payments are applied afterward to reach the balance.</p>
   <table>
-    <thead><tr><th>School year</th><th class="num">Annual tuition / student</th><th>Updated</th></tr></thead>
+    <thead><tr><th>School year</th><th class="num">Annual tuition / student</th><th>Updated</th><th></th></tr></thead>
     <tbody>
-      <% if (rates.length === 0) { %><tr><td colspan="3" class="muted">No rate set yet.</td></tr><% } %>
+      <% if (rates.length === 0) { %><tr><td colspan="4" class="muted">No rate set yet.</td></tr><% } %>
       <% rates.forEach(function(r){ %>
         <tr>
           <td><%= r.school_year %></td>
           <td class="num"><%= money(r.annual_tuition) %></td>
           <td class="muted"><%= fmtDate(r.updated_at) %></td>
+          <td class="num">
+            <form class="inline" method="post" action="/admin/settings/tuition/apply-all"
+                  onsubmit="return confirm('Re-price every family to <%= money(r.annual_tuition) %> for <%= r.school_year %>? Existing tuition charges that differ will be voided and re-added at this rate.');">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="school_year" value="<%= r.school_year %>">
+              <button class="secondary small" type="submit">Sync all families</button>
+            </form>
+          </td>
         </tr>
       <% }); %>
     </tbody>
   </table>
+  <p class="muted">"Sync all families" applies this rate to every family for that year — adding tuition where missing and re-pricing any that differ. Individual families can also be synced from their own page.</p>
   <form method="post" action="/admin/settings/tuition" style="margin-top:12px">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <div class="row">

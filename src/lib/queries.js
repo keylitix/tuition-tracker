@@ -419,36 +419,64 @@ async function upsertTuitionRate(year, annualTuition) {
   );
 }
 
-// Start a family at full tuition: add a standard tuition charge for each active
-// student in the year that doesn't already have one. Idempotent. Returns how many
-// were applied (0 if no rate is configured for the year).
+// Sync a family to the current standard tuition for the year. For each active
+// student: add a tuition charge if missing; if one exists at a different amount,
+// re-price it (void the old, add at the current rate — preserving the ledger
+// audit trail per §6.2); leave it alone if it already matches. Idempotent.
 async function applyStandardTuition(familyId, year, createdBy = null) {
   const rate = await getTuitionRate(year);
-  if (!rate) return { applied: 0, noRate: true, rate: null };
+  if (!rate) return { added: 0, repriced: 0, unchanged: 0, noRate: true, rate: null };
 
   const desc = tuitionDescription(year);
+  const rateCents = Math.round(Number(rate.annual_tuition) * 100);
   const [students, charges] = await Promise.all([
     getStudentsForFamily(familyId, year),
     getChargesForFamily(familyId, year),
   ]);
-  const alreadyHas = new Set(
-    charges.filter((c) => !c.voided && c.description === desc).map((c) => c.student_id)
-  );
 
-  let applied = 0;
-  for (const s of students) {
-    if (s.active === false || alreadyHas.has(s.id)) continue;
-    await addCharge({
-      studentId: s.id,
-      description: desc,
-      amount: rate.annual_tuition,
-      dueDate: null,
-      schoolYear: year,
-      createdBy,
-    });
-    applied++;
+  // Group each student's non-voided standard-tuition charges.
+  const byStudent = new Map();
+  for (const c of charges) {
+    if (c.voided || c.description !== desc) continue;
+    if (!byStudent.has(c.student_id)) byStudent.set(c.student_id, []);
+    byStudent.get(c.student_id).push(c);
   }
-  return { applied, noRate: false, rate: rate.annual_tuition };
+
+  let added = 0, repriced = 0, unchanged = 0;
+  for (const s of students) {
+    if (s.active === false) continue;
+    const existing = byStudent.get(s.id) || [];
+    const matches = existing.filter((c) => Math.round(Number(c.amount) * 100) === rateCents);
+
+    if (existing.length === 0) {
+      await addCharge({ studentId: s.id, description: desc, amount: rate.annual_tuition, dueDate: null, schoolYear: year, createdBy });
+      added++;
+    } else if (existing.length === 1 && matches.length === 1) {
+      unchanged++;
+    } else {
+      // Normalize to exactly one charge at the current rate.
+      for (const c of existing) await voidCharge(c.id);
+      await addCharge({ studentId: s.id, description: desc, amount: rate.annual_tuition, dueDate: null, schoolYear: year, createdBy });
+      repriced++;
+    }
+  }
+  return { added, repriced, unchanged, noRate: false, rate: rate.annual_tuition };
+}
+
+// Sync every active family to the current standard tuition for a year.
+async function applyStandardTuitionToAll(year, createdBy = null) {
+  const rate = await getTuitionRate(year);
+  const totals = { families: 0, added: 0, repriced: 0, unchanged: 0, noRate: !rate };
+  if (!rate) return totals;
+  const r = await query('SELECT id FROM families WHERE active = 1;');
+  for (const row of r.recordset) {
+    const res = await applyStandardTuition(row.id, year, createdBy);
+    totals.families++;
+    totals.added += res.added;
+    totals.repriced += res.repriced;
+    totals.unchanged += res.unchanged;
+  }
+  return totals;
 }
 
 async function listOptionalItems(activeOnly = true) {
@@ -546,6 +574,7 @@ module.exports = {
   listTuitionRates,
   upsertTuitionRate,
   applyStandardTuition,
+  applyStandardTuitionToAll,
   listOptionalItems,
   getOptionalItem,
   createOptionalItem,
