@@ -540,6 +540,46 @@ async function endorsePctc(paymentId, endorsedOn) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Admin users (spec §8 — created by another admin, no self-registration) */
+/* ------------------------------------------------------------------ */
+
+async function listAdmins() {
+  const r = await query(
+    'SELECT id, email, display_name, active FROM admin_users ORDER BY active DESC, display_name;'
+  );
+  return r.recordset;
+}
+
+// Insert or update an admin by email. Passing an existing email resets that
+// admin's password and reactivates them (doubles as password reset). The caller
+// hashes the password (bcrypt) before calling this.
+async function upsertAdmin({ email, displayName, passwordHash }) {
+  await query(
+    `MERGE admin_users AS t
+     USING (SELECT @email AS email) AS s ON t.email = s.email
+     WHEN MATCHED THEN UPDATE SET password_hash = @hash, display_name = @name, active = 1
+     WHEN NOT MATCHED THEN INSERT (email, password_hash, display_name)
+          VALUES (@email, @hash, @name);`,
+    {
+      email: { type: sql.NVarChar(255), value: email },
+      hash: { type: sql.NVarChar(255), value: passwordHash },
+      name: { type: sql.NVarChar(100), value: displayName },
+    }
+  );
+}
+
+async function deactivateAdmin(id) {
+  await query('UPDATE admin_users SET active = 0 WHERE id = @id;', {
+    id: { type: sql.Int, value: id },
+  });
+}
+
+async function countActiveAdmins() {
+  const r = await query('SELECT COUNT(*) AS n FROM admin_users WHERE active = 1;');
+  return r.recordset[0].n;
+}
+
+/* ------------------------------------------------------------------ */
 /* Webhook error log / payment failures (spec §6.1, §7)               */
 /* ------------------------------------------------------------------ */
 
@@ -583,5 +623,9 @@ module.exports = {
   deactivateOptionalItem,
   getPctcWorklist,
   endorsePctc,
+  listAdmins,
+  upsertAdmin,
+  deactivateAdmin,
+  countActiveAdmins,
   getOpenWebhookErrors,
 };

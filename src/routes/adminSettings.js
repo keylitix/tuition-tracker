@@ -5,6 +5,7 @@
 // here — they are collected on a separate enrollment form.
 
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const q = require('../lib/queries');
 const { normalizeAmount } = require('../lib/money');
 const { currentSchoolYear } = require('../lib/schoolYear');
@@ -13,18 +14,54 @@ const router = express.Router();
 
 router.get('/', async (req, res, next) => {
   try {
-    const [rates, items] = await Promise.all([
+    const [rates, items, admins] = await Promise.all([
       q.listTuitionRates(),
       q.listOptionalItems(false),
+      q.listAdmins(),
     ]);
     res.render('admin/settings', {
       title: 'Settings',
       rates,
       items,
+      admins,
+      currentAdminId: req.session.admin.id,
       defaultYear: currentSchoolYear(),
       flash: req.query.ok || null,
       error: req.query.err || null,
     });
+  } catch (err) { next(err); }
+});
+
+// Add a new admin, or reset an existing one's password (spec §8).
+router.post('/admins', async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    const displayName = String(req.body.display_name || '').trim();
+    const password = String(req.body.password || '');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || !displayName) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('Enter a valid email and name.'));
+    }
+    if (password.length < 8) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('Password must be at least 8 characters.'));
+    }
+    const passwordHash = await bcrypt.hash(password, 12);
+    await q.upsertAdmin({ email, displayName, passwordHash });
+    res.redirect('/admin/settings?ok=' + encodeURIComponent(`Admin saved: ${email}`));
+  } catch (err) { next(err); }
+});
+
+// Deactivate an admin. Guards: can't remove yourself or the last active admin.
+router.post('/admins/:id/deactivate', async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (id === req.session.admin.id) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('You cannot remove your own admin account.'));
+    }
+    if ((await q.countActiveAdmins()) <= 1) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('Cannot remove the last active admin.'));
+    }
+    await q.deactivateAdmin(id);
+    res.redirect('/admin/settings?ok=' + encodeURIComponent('Admin removed.'));
   } catch (err) { next(err); }
 });
 

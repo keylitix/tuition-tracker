@@ -77,4 +77,41 @@
   </form>
 </div>
 
+<!-- Admins -->
+<div class="card">
+  <h2>Admins</h2>
+  <p class="muted">People who can sign in to the office view. No self-registration — admins are added here by another admin.</p>
+  <table>
+    <thead><tr><th>Name</th><th>Email</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <% admins.forEach(function(a){ %>
+        <tr class="<%= a.active ? '' : 'voided' %>">
+          <td><%= a.display_name %><% if (a.id === currentAdminId) { %> <span class="muted">(you)</span><% } %></td>
+          <td><%= a.email %></td>
+          <td><%= a.active ? 'Active' : 'Removed' %></td>
+          <td class="num">
+            <% if (a.active && a.id !== currentAdminId) { %>
+              <form class="inline" method="post" action="/admin/settings/admins/<%= a.id %>/deactivate"
+                    onsubmit="return confirm('Remove <%= a.email %> as an admin? They will no longer be able to sign in.');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="secondary small" type="submit">Remove</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <form method="post" action="/admin/settings/admins" style="margin-top:12px">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="row">
+      <div><label>Name</label><input name="display_name" placeholder="Office Staff" required></div>
+      <div><label>Email</label><input name="email" type="email" placeholder="name@school.org" required></div>
+      <div><label>Password <span class="muted">(min 8 chars)</span></label><input name="password" type="password" autocomplete="new-password" required></div>
+      <div style="display:flex;align-items:flex-end"><button type="submit">Add admin</button></div>
+    </div>
+    <p class="muted" style="margin-top:8px">Entering an existing admin's email resets their password.</p>
+  </form>
+</div>
+
 <%- include('../partials/foot') %>
