@@ -53,14 +53,12 @@
           <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
         </rule>
 
-        <!-- Serve static assets directly -->
-        <rule name="StaticContent" stopProcessing="true">
-          <match url="^public/.*" />
-          <action type="None" />
-        </rule>
-
-        <!-- Everything else to Node -->
-        <rule name="DynamicContent">
+        <!-- Everything is handled by Node (Express serves /public itself). Only
+             real files at the web root are served directly by IIS. Static assets
+             live in src/public — NOT at the root — so they correctly fall through
+             to Node here. -->
+        <rule name="nodejs">
+          <match url="(.*)" />
           <conditions>
             <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
           </conditions>
@@ -68,6 +66,22 @@
         </rule>
       </rules>
     </rewrite>
+
+    <!-- Never serve source, dependencies, secrets, or iisnode logs as static -->
+    <security>
+      <requestFiltering>
+        <!-- Note: do NOT hide "src" — the rewrite target src/server.js lives there. -->
+        <hiddenSegments>
+          <add segment="node_modules" />
+          <add segment="iisnode" />
+          <add segment=".env" />
+          <add segment=".git" />
+        </hiddenSegments>
+        <fileExtensions>
+          <add fileExtension=".sql" allowed="false" />
+        </fileExtensions>
+      </requestFiltering>
+    </security>
 
     <iisnode
       nodeProcessCountPerApplication="1"
