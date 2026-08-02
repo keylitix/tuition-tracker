@@ -1,0 +1,71 @@
+<%- include('../partials/head') %>
+
+<p class="muted"><a href="/admin">&larr; Families</a></p>
+<h1>Settings</h1>
+
+<% if (flash) { %><div class="flash"><%= flash %></div><% } %>
+<% if (error) { %><div class="errorbox"><%= error %></div><% } %>
+
+<!-- Standard tuition -->
+<div class="card">
+  <h2>Standard tuition <span class="muted">(per student, per year)</span></h2>
+  <p class="muted">Every family starts at this amount per enrolled student. Scholarships, tax credits, and payments are applied afterward to reach the balance.</p>
+  <table>
+    <thead><tr><th>School year</th><th class="num">Annual tuition / student</th><th>Updated</th></tr></thead>
+    <tbody>
+      <% if (rates.length === 0) { %><tr><td colspan="3" class="muted">No rate set yet.</td></tr><% } %>
+      <% rates.forEach(function(r){ %>
+        <tr>
+          <td><%= r.school_year %></td>
+          <td class="num"><%= money(r.annual_tuition) %></td>
+          <td class="muted"><%= fmtDate(r.updated_at) %></td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <form method="post" action="/admin/settings/tuition" style="margin-top:12px">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="row">
+      <div><label>School year</label><input name="school_year" value="<%= defaultYear %>" placeholder="2026-2027" required></div>
+      <div><label>Annual tuition per student</label><input name="annual_tuition" inputmode="decimal" placeholder="6000.00" required></div>
+      <div style="display:flex;align-items:flex-end"><button type="submit">Save rate</button></div>
+    </div>
+  </form>
+</div>
+
+<!-- Optional items -->
+<div class="card">
+  <h2>Optional items</h2>
+  <p class="muted">Add-ons the office applies only to students who opt in (e.g. device insurance). These aren't charged automatically.</p>
+  <table>
+    <thead><tr><th>Item</th><th class="num">Amount</th><th></th></tr></thead>
+    <tbody>
+      <% if (items.length === 0) { %><tr><td colspan="3" class="muted">No optional items yet.</td></tr><% } %>
+      <% items.forEach(function(it){ %>
+        <tr class="<%= it.active ? '' : 'voided' %>">
+          <td><%= it.name %><% if (!it.active) { %> <span class="muted">(removed)</span><% } %></td>
+          <td class="num"><%= money(it.amount) %></td>
+          <td class="num">
+            <% if (it.active) { %>
+              <form class="inline" method="post" action="/admin/settings/items/<%= it.id %>/deactivate"
+                    onsubmit="return confirm('Remove this optional item from the catalog? Existing charges are unaffected.');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="secondary small" type="submit">Remove</button>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+  <form method="post" action="/admin/settings/items" style="margin-top:12px">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="row">
+      <div><label>Item name</label><input name="name" placeholder="Device insurance" required></div>
+      <div><label>Amount</label><input name="amount" inputmode="decimal" placeholder="10.00" required></div>
+      <div style="display:flex;align-items:flex-end"><button type="submit">Add item</button></div>
+    </div>
+  </form>
+</div>
+
+<%- include('../partials/foot') %>

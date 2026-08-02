@@ -131,6 +131,22 @@
 <!-- Charges -->
 <div class="card">
   <h2>Charges</h2>
+
+  <!-- Start at standard tuition (per student), then work backwards with payments. -->
+  <div class="toolbar" style="justify-content:space-between;background:#f0f6f2;border:1px solid #d5e8dd;border-radius:8px;padding:10px 12px">
+    <% if (tuitionRate !== null) { %>
+      <span>Standard tuition: <strong><%= money(tuitionRate) %></strong> / student · <%= planYear %></span>
+      <form class="inline" method="post" action="/admin/families/<%= family.id %>/apply-tuition">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="school_year" value="<%= planYear %>">
+        <button class="small" type="submit">Apply standard tuition</button>
+      </form>
+    <% } else { %>
+      <span class="muted">No standard tuition set for <%= planYear %>.</span>
+      <a class="btn secondary small" href="/admin/settings">Set it in Settings</a>
+    <% } %>
+  </div>
+
   <table>
     <thead><tr><th>Description</th><th>Student</th><th>Due</th><th>Year</th><th class="num">Amount</th><th></th></tr></thead>
     <tbody>
@@ -178,6 +194,35 @@
       <div style="margin-top:12px"><button type="submit">Add charge</button></div>
     </form>
   </details>
+
+  <% if (optionalItems && optionalItems.length && students.length) { %>
+    <details style="margin-top:12px">
+      <summary>Add optional item</summary>
+      <form method="post" action="/admin/families/<%= family.id %>/optional-item" style="margin-top:10px">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="school_year" value="<%= defYear %>">
+        <div class="row">
+          <div>
+            <label>Item</label>
+            <select name="item_id" required>
+              <% optionalItems.forEach(function(it){ %>
+                <option value="<%= it.id %>"><%= it.name %> — <%= money(it.amount) %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div>
+            <label>Student</label>
+            <select name="student_id" required>
+              <% students.forEach(function(s){ %>
+                <option value="<%= s.id %>"><%= s.first_name %> <%= s.last_name %></option>
+              <% }); %>
+            </select>
+          </div>
+          <div style="display:flex;align-items:flex-end"><button type="submit">Add item</button></div>
+        </div>
+      </form>
+    </details>
+  <% } %>
 </div>
 
 <!-- Payments -->

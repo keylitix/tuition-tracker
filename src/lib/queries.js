@@ -387,6 +387,101 @@ async function clearAwaitingAuth(familyId) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Standard tuition rate + optional-items catalog                      */
+/* ------------------------------------------------------------------ */
+
+// The canonical description used for a standard tuition charge, so applying it
+// twice is a no-op (idempotent).
+const tuitionDescription = (year) => `Tuition ${year}`;
+
+async function getTuitionRate(year) {
+  const r = await query('SELECT * FROM tuition_rates WHERE school_year = @year;', {
+    year: { type: sql.NVarChar(9), value: year },
+  });
+  return r.recordset[0] || null;
+}
+
+async function listTuitionRates() {
+  const r = await query('SELECT * FROM tuition_rates ORDER BY school_year DESC;');
+  return r.recordset;
+}
+
+async function upsertTuitionRate(year, annualTuition) {
+  await query(
+    `MERGE tuition_rates AS t
+     USING (SELECT @year AS school_year) AS s ON t.school_year = s.school_year
+     WHEN MATCHED THEN UPDATE SET annual_tuition = @amt, updated_at = SYSUTCDATETIME()
+     WHEN NOT MATCHED THEN INSERT (school_year, annual_tuition) VALUES (@year, @amt);`,
+    {
+      year: { type: sql.NVarChar(9), value: year },
+      amt: { type: sql.Decimal(10, 2), value: annualTuition },
+    }
+  );
+}
+
+// Start a family at full tuition: add a standard tuition charge for each active
+// student in the year that doesn't already have one. Idempotent. Returns how many
+// were applied (0 if no rate is configured for the year).
+async function applyStandardTuition(familyId, year, createdBy = null) {
+  const rate = await getTuitionRate(year);
+  if (!rate) return { applied: 0, noRate: true, rate: null };
+
+  const desc = tuitionDescription(year);
+  const [students, charges] = await Promise.all([
+    getStudentsForFamily(familyId, year),
+    getChargesForFamily(familyId, year),
+  ]);
+  const alreadyHas = new Set(
+    charges.filter((c) => !c.voided && c.description === desc).map((c) => c.student_id)
+  );
+
+  let applied = 0;
+  for (const s of students) {
+    if (s.active === false || alreadyHas.has(s.id)) continue;
+    await addCharge({
+      studentId: s.id,
+      description: desc,
+      amount: rate.annual_tuition,
+      dueDate: null,
+      schoolYear: year,
+      createdBy,
+    });
+    applied++;
+  }
+  return { applied, noRate: false, rate: rate.annual_tuition };
+}
+
+async function listOptionalItems(activeOnly = true) {
+  const r = await query(
+    `SELECT * FROM optional_items ${activeOnly ? 'WHERE active = 1' : ''} ORDER BY name;`
+  );
+  return r.recordset;
+}
+
+async function getOptionalItem(id) {
+  const r = await query('SELECT * FROM optional_items WHERE id = @id;', {
+    id: { type: sql.Int, value: id },
+  });
+  return r.recordset[0] || null;
+}
+
+async function createOptionalItem(name, amount) {
+  await query(
+    `INSERT INTO optional_items (name, amount) VALUES (@name, @amount);`,
+    {
+      name: { type: sql.NVarChar(200), value: name },
+      amount: { type: sql.Decimal(10, 2), value: amount },
+    }
+  );
+}
+
+async function deactivateOptionalItem(id) {
+  await query('UPDATE optional_items SET active = 0 WHERE id = @id;', {
+    id: { type: sql.Int, value: id },
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Admin — PCTC worklist (spec §6.3)                                   */
 /* ------------------------------------------------------------------ */
 
@@ -447,6 +542,14 @@ module.exports = {
   voidCharge,
   recordPayment,
   addStudent,
+  getTuitionRate,
+  listTuitionRates,
+  upsertTuitionRate,
+  applyStandardTuition,
+  listOptionalItems,
+  getOptionalItem,
+  createOptionalItem,
+  deactivateOptionalItem,
   getPctcWorklist,
   endorsePctc,
   getOpenWebhookErrors,

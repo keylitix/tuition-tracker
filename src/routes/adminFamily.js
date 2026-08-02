@@ -87,6 +87,7 @@ router.post('/', async (req, res, next) => {
       stripeCustomerId: values.stripe_customer_id,
     });
 
+    let tuitionNote = '';
     if (wantsStudent) {
       await q.addStudent({
         externalId: '', // auto STU-####
@@ -96,8 +97,11 @@ router.post('/', async (req, res, next) => {
         grade: values.grade,
         schoolYear: values.school_year,
       });
+      // Start them at full standard tuition if a rate is configured for the year.
+      const applied = await q.applyStandardTuition(id, values.school_year, req.session.admin.id);
+      if (applied.applied > 0) tuitionNote = ` — started at standard tuition (${'$'}${Number(applied.rate).toFixed(2)})`;
     }
-    res.redirect(`/admin/families/${id}?ok=Family+created`);
+    res.redirect(`/admin/families/${id}?ok=` + encodeURIComponent(`Family created${tuitionNote}`));
   } catch (err) {
     // Duplicate external_id -> friendly message rather than a 500.
     if (err.number === 2627 || err.number === 2601) {
@@ -116,13 +120,19 @@ router.get('/:id', loadFamily, async (req, res, next) => {
 
     // Plan context: bill the balance for a specific year (spec §7.4).
     const planYear = year || years[0] || currentSchoolYear();
-    const planBalance = await q.getFamilyBalance(req.family.id, planYear);
+    const [planBalance, tuitionRate, optionalItems] = await Promise.all([
+      q.getFamilyBalance(req.family.id, planYear),
+      q.getTuitionRate(planYear),
+      q.listOptionalItems(true),
+    ]);
     res.render('admin/family', {
       title: req.family.name,
       family: req.family,
       year,
       years,
       methods: q.PAYMENT_METHODS,
+      tuitionRate: tuitionRate ? tuitionRate.annual_tuition : null,
+      optionalItems,
       planSpecs: plans.PLAN_SPECS,
       planYear,
       planBalance: planBalance.balance,
@@ -162,6 +172,44 @@ router.post('/:id/students', loadFamily, async (req, res, next) => {
       schoolYear,
     });
     res.redirect(`/admin/families/${req.family.id}?ok=Student+added`);
+  } catch (err) { next(err); }
+});
+
+// Start the family at full standard tuition (per student, idempotent).
+router.post('/:id/apply-tuition', loadFamily, async (req, res, next) => {
+  try {
+    const year = String(req.body.school_year || '').trim() || currentSchoolYear();
+    const result = await q.applyStandardTuition(req.family.id, year, req.session.admin.id);
+    const back = `/admin/families/${req.family.id}?year=${encodeURIComponent(year)}`;
+    if (result.noRate) {
+      return res.redirect(back + '&err=' + encodeURIComponent(`No standard tuition set for ${year}. Set it under Settings first.`));
+    }
+    const msg = result.applied === 0
+      ? 'All students already have standard tuition for that year.'
+      : `Applied standard tuition to ${result.applied} student(s).`;
+    res.redirect(back + '&ok=' + encodeURIComponent(msg));
+  } catch (err) { next(err); }
+});
+
+// Add an optional catalog item (e.g. device insurance) to one student.
+router.post('/:id/optional-item', loadFamily, async (req, res, next) => {
+  try {
+    const itemId = parseInt(req.body.item_id, 10);
+    const studentId = parseInt(req.body.student_id, 10);
+    const schoolYear = String(req.body.school_year || '').trim() || currentSchoolYear();
+    const item = Number.isInteger(itemId) ? await q.getOptionalItem(itemId) : null;
+    if (!item || !Number.isInteger(studentId)) {
+      return res.status(400).send('Pick an item and a student.');
+    }
+    await q.addCharge({
+      studentId,
+      description: item.name,
+      amount: item.amount,
+      dueDate: null,
+      schoolYear,
+      createdBy: req.session.admin.id,
+    });
+    res.redirect(`/admin/families/${req.family.id}?ok=` + encodeURIComponent(`Added ${item.name}.`));
   } catch (err) { next(err); }
 });
 

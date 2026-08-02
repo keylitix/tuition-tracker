@@ -106,6 +106,7 @@ app.use('/admin/families', requireAdmin, require('./routes/adminFamily'));
 app.use('/admin/pctc', requireAdmin, require('./routes/adminPctc'));
 app.use('/admin/export', requireAdmin, require('./routes/adminExport'));
 app.use('/admin/import', requireAdmin, require('./routes/adminImport'));
+app.use('/admin/settings', requireAdmin, require('./routes/adminSettings'));
 
 // Parent portal: auth (unguarded) then guarded read-only views.
 app.use('/portal', require('./routes/parentAuth'));
