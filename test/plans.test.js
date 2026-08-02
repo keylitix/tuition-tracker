@@ -20,13 +20,13 @@ test('every plan bills the exact balance in total', () => {
   }
 });
 
-test('monthly splits into 10 cycles with remainder on the last', () => {
-  const c = computePlan(1000.05, 'monthly'); // 100005 cents / 10 = 10000 r5
-  assert.strictEqual(c.cycles, 10);
+test('monthly splits into 9 cycles with remainder on the last', () => {
+  const c = computePlan(1000, 'monthly'); // 100000 cents / 9 = 11111 r1
+  assert.strictEqual(c.cycles, 9);
   assert.strictEqual(c.object, 'subscription');
   assert.strictEqual(c.intervalMonths, 1);
-  assert.strictEqual(c.amountsCents[0], 10000);
-  assert.strictEqual(c.amountsCents[9], 10005); // remainder on final
+  assert.strictEqual(c.amountsCents[0], 11111);
+  assert.strictEqual(c.amountsCents[8], 11112); // remainder on final
 });
 
 test('semester is two 6-month cycles', () => {

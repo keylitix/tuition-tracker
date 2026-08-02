@@ -16,7 +16,7 @@
 // Stripe calls and needs a live (test-mode) Stripe account to exercise.
 
 const PLAN_SPECS = {
-  monthly: { object: 'subscription', intervalMonths: 1, cycles: 10, label: 'Monthly (10 payments)' },
+  monthly: { object: 'subscription', intervalMonths: 1, cycles: 9, label: 'Monthly (9 payments)' },
   semester: { object: 'subscription', intervalMonths: 6, cycles: 2, label: 'Semester (2 payments)' },
   annual: { object: 'invoice', intervalMonths: 0, cycles: 1, label: 'Annual (paid in full)' },
 };

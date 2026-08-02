@@ -44,7 +44,7 @@ async function createBalanceCheckout(stripe, { family, balanceDollars, schoolYea
   return session.url;
 }
 
-// Recurring ACH autopay for the balance (monthly = 10 cycles, semester = 2).
+// Recurring ACH autopay for the balance (monthly = 9 cycles, semester = 2).
 // Uses the same cents split as the office plan; the rounding remainder rides on a
 // one-time line item (charged with the first payment) so the total is exact.
 async function createAutopayCheckout(stripe, { family, plan, balanceDollars, schoolYear }) {

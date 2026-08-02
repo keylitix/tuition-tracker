@@ -75,7 +75,7 @@ customers are logged to an admin-visible error log, not thrown.
 **§7.4 Plan creation — the one write path.** From the family detail page the office
 selects a plan and clicks **Create plan in Stripe**. The amount is derived from the
 **balance** (not gross tuition — PCTC is already a payment, so gross would double-charge):
-`monthly` → subscription, `balance/10`, 10 cycles; `semester` → subscription (6-month),
+`monthly` → subscription, `balance/9`, 9 cycles; `semester` → subscription (6-month),
 `balance/2`, 2 cycles; `annual` → one-off invoice, `balance`, 1 cycle. Cents split with
 the remainder on the **final** cycle so the total matches exactly. Guardrails: deterministic
 idempotency key `plan-{family_id}-{school_year}`; ledger committed before the Stripe call;
