@@ -149,17 +149,20 @@ function streamStatement(res, data) {
   row('Total paid', formatUSD(totalPaid), { bold: true, color: NAVY });
 
   /* ---------------- Balance due box ---------------- */
+  // Compute from the totals shown above so the box always reconciles with the
+  // itemized lines (never trust a passed-in shape here).
+  const balanceDue = totalCharged - totalPaid;
   doc.moveDown(1);
   if (doc.y > 690) doc.addPage();
   const boxY = doc.y;
   const boxH = 40;
-  const owed = Number(data.balance) > 0;
+  const owed = balanceDue > 0.0001;
   doc.roundedRect(left, boxY, contentW, boxH, 6)
     .fillColor(owed ? '#fdecec' : '#e8f0fb').fill();
   doc.fillColor(owed ? RED : NAVY).font('Helvetica-Bold').fontSize(13)
     .text('Balance due', left + 16, boxY + 13);
   doc.fillColor(owed ? RED : NAVY).font('Helvetica-Bold').fontSize(16)
-    .text(formatUSD(data.balance), left, boxY + 11, { width: contentW - 16, align: 'right' });
+    .text(formatUSD(balanceDue), left, boxY + 11, { width: contentW - 16, align: 'right' });
   doc.y = boxY + boxH + 18;
 
   /* ---------------- Footer ---------------- */
