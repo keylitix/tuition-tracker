@@ -1,7 +1,7 @@
 # Deploying to SmarterASP.NET (iisnode)
 
 App **and** database run on SmarterASP. The database is already provisioned and
-migrated (`db_ab7950_farmacademy`); this covers getting the Node app live.
+migrated (the SmarterASP SQL database); this covers getting the Node app live.
 
 All the app's dependencies are **pure JavaScript** (no native compilation), so
 `node_modules` is portable — you can upload it directly and skip running `npm`
