@@ -38,7 +38,10 @@ app.use(helmet({
       fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:'],
       scriptSrc: ["'self'"],
-      formAction: ["'self'", 'https://billing.stripe.com'],
+      // Pay/autopay forms post to us, then we redirect to Stripe Checkout — the
+      // browser applies form-action to that redirect target, so Stripe's hosted
+      // domains must be allowed here or the redirect is silently blocked.
+      formAction: ["'self'", 'https://checkout.stripe.com', 'https://billing.stripe.com'],
     },
   },
 }));
