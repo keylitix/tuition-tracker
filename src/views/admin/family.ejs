@@ -7,6 +7,11 @@
 <% if (error) { %><div class="errorbox"><%= error %></div><% } %>
 
 <h1><%= family.name %></h1>
+<p class="muted" style="margin:-8px 0 14px">
+  <a href="mailto:<%= family.email %>"><%= family.email %></a>
+  <% if (family.phone) { %> · <a href="tel:<%= family.phone %>"><%= family.phone %></a><% } %>
+  <% if (!family.phone) { %> · <span>no phone on file</span><% } %>
+</p>
 
 <div class="summary">
   <div class="tile"><div class="label">Charged</div><div class="value"><%= money(balance.charged) %></div></div>
@@ -17,12 +22,16 @@
   </div>
 </div>
 
-<p class="toolbar">
+<div class="toolbar">
+  <form class="inline" method="post" action="/admin/families/<%= family.id %>/send-link">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <button type="submit">Email sign-in link to parent</button>
+  </form>
   <a class="btn secondary" href="/admin/families/<%= family.id %>/statement.pdf<%= year ? '?year=' + year : '' %>">Download statement (PDF)</a>
   <% if (family.stripe_customer_id && stripePortalBase) { %>
-    <a class="btn secondary" href="https://dashboard.stripe.com/customers/<%= family.stripe_customer_id %>" target="_blank" rel="noopener">Open in Stripe</a>
+    <a class="btn secondary" href="https://dashboard.stripe.com/test/customers/<%= family.stripe_customer_id %>" target="_blank" rel="noopener">Open in Stripe</a>
   <% } %>
-</p>
+</div>
 
 <!-- Payment plan (spec §7.4) -->
 <div class="card">

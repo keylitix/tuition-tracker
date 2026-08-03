@@ -6,6 +6,8 @@ const { normalizeAmount } = require('../lib/money');
 const { streamStatement } = require('../lib/pdf');
 const plans = require('../lib/plans');
 const stripe = require('../lib/stripeClient');
+const magic = require('../lib/magicLink');
+const { sendMagicLink } = require('../lib/mailer');
 const { currentSchoolYear } = require('../lib/schoolYear');
 const config = require('../config');
 
@@ -158,6 +160,24 @@ router.post('/:id/edit', loadFamily, async (req, res, next) => {
       stripe_customer_id: String(req.body.stripe_customer_id || '').trim(),
     });
     res.redirect(`/admin/families/${req.family.id}?ok=Family+updated`);
+  } catch (err) { next(err); }
+});
+
+// Email the parent a magic sign-in link (office-initiated).
+router.post('/:id/send-link', loadFamily, async (req, res, next) => {
+  try {
+    if (!req.family.email) {
+      return res.redirect(`/admin/families/${req.family.id}?err=` + encodeURIComponent('This family has no email on file.'));
+    }
+    const token = await magic.createToken(req.family.id);
+    const url = `${config.baseUrl}/portal/verify?token=${token}`;
+    try {
+      await sendMagicLink(req.family.email, url);
+    } catch (e) {
+      console.error('Admin send-link failed:', e.message);
+      return res.redirect(`/admin/families/${req.family.id}?err=` + encodeURIComponent('Could not send the email. Check the mail settings.'));
+    }
+    res.redirect(`/admin/families/${req.family.id}?ok=` + encodeURIComponent(`Sign-in link emailed to ${req.family.email}.`));
   } catch (err) { next(err); }
 });
 
