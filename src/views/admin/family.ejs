@@ -133,7 +133,7 @@
   <h2>Charges</h2>
 
   <!-- Start at standard tuition (per student), then work backwards with payments. -->
-  <div class="toolbar" style="justify-content:space-between;background:#f0f6f2;border:1px solid #d5e8dd;border-radius:8px;padding:10px 12px">
+  <div class="toolbar" style="justify-content:space-between;background:#eef3fb;border:1px solid #cfddf1;border-radius:8px;padding:10px 12px">
     <% if (tuitionRate !== null) { %>
       <span>Standard tuition: <strong><%= money(tuitionRate) %></strong> / student · <%= planYear %></span>
       <form class="inline" method="post" action="/admin/families/<%= family.id %>/apply-tuition">

@@ -34,7 +34,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"], // small inline styles in views
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // views + Google Fonts
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
       imgSrc: ["'self'", 'data:'],
       scriptSrc: ["'self'"],
       formAction: ["'self'", 'https://billing.stripe.com'],

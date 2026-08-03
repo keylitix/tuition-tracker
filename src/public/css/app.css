@@ -1,26 +1,34 @@
 :root {
-  --bg: #f6f7f9;
+  /* The Farm Academy brand: navy blue + red on white */
+  --bg: #f4f6fa;
   --card: #ffffff;
-  --ink: #1c2430;
-  --muted: #5c6773;
-  --line: #e2e6eb;
-  --brand: #2f7a4d;       /* farm green */
-  --brand-dark: #245e3c;
-  --danger: #b3261e;
-  --danger-bg: #fdecea;
+  --ink: #2a2f36;
+  --muted: #6b7280;
+  --line: #e3e7ee;
+  --brand: #034187;        /* Farm Academy navy blue */
+  --brand-dark: #022c5c;
+  --accent: #d72323;       /* Farm Academy red */
+  --danger: #d72323;
+  --danger-bg: #fdecec;
   --warn: #8a5a00;
   --warn-bg: #fff4d6;
-  --ok: #1f7a3d;
+  --ok: #034187;           /* paid-up shown in brand blue */
 }
 
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font: 15px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: 15px/1.6 "Open Sans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--ink);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
-a { color: var(--brand-dark); }
+h1, h2, h3, .brand, .balance-hero {
+  font-family: "Rajdhani", "Segoe UI", Helvetica, Arial, sans-serif;
+  letter-spacing: .01em;
+}
+h1 { font-weight: 700; }
+a { color: var(--brand); }
 
 header.topbar {
   background: var(--brand);
@@ -98,7 +106,7 @@ button.secondary, .btn.secondary { background: #fff; color: var(--ink); border: 
 button.danger { background: var(--danger); }
 button.small { padding: 5px 9px; font-size: 13px; }
 
-.flash { background: #e8f5ee; border: 1px solid #bfe3cd; color: var(--brand-dark);
+.flash { background: #e8f0fb; border: 1px solid #c2d6f0; color: var(--brand-dark);
   padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
 .errorbox { background: var(--danger-bg); border: 1px solid #f3c7c3; color: var(--danger);
   padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
