@@ -48,9 +48,14 @@ header.topbar button.link {
   background: none; border: 0; color: #fff; cursor: pointer; font: inherit; opacity: .9;
 }
 
-main { max-width: 1040px; margin: 24px auto; padding: 0 20px; }
-h1 { font-size: 22px; margin: 0 0 16px; }
+/* Fluid width: fills the desktop up to a comfortable cap, full-width on mobile. */
+main { width: 100%; max-width: 1440px; margin: 24px auto; padding: 0 28px; }
+@media (max-width: 640px) { main { padding: 0 16px; margin: 16px auto; } }
+h1 { font-size: 23px; margin: 0 0 16px; }
 h2 { font-size: 16px; margin: 24px 0 10px; }
+
+/* Login and other single-purpose pages stay narrow and centered. */
+.center-narrow { max-width: 420px; }
 
 .card {
   background: var(--card);

@@ -120,9 +120,10 @@ router.get('/:id', loadFamily, async (req, res, next) => {
 
     // Plan context: bill the balance for a specific year (spec §7.4).
     const planYear = year || years[0] || currentSchoolYear();
-    const [planBalance, tuitionRate, optionalItems] = await Promise.all([
+    const [planBalance, tuitionRate, tuitionStatus, optionalItems] = await Promise.all([
       q.getFamilyBalance(req.family.id, planYear),
       q.getTuitionRate(planYear),
+      q.tuitionApplyStatus(req.family.id, planYear),
       q.listOptionalItems(true),
     ]);
     res.render('admin/family', {
@@ -132,6 +133,7 @@ router.get('/:id', loadFamily, async (req, res, next) => {
       years,
       methods: q.PAYMENT_METHODS,
       tuitionRate: tuitionRate ? tuitionRate.annual_tuition : null,
+      tuitionStatus,
       optionalItems,
       planSpecs: plans.PLAN_SPECS,
       planYear,
@@ -283,10 +285,6 @@ router.post('/:id/plan', loadFamily, async (req, res, next) => {
     if (req.family.payment_plan) {
       return res.redirect(back('err=' + encodeURIComponent('This family already has a plan. Changing it is a separate, explicit action.')));
     }
-    // Need a Stripe customer to bill.
-    if (!req.family.stripe_customer_id) {
-      return res.redirect(back('err=' + encodeURIComponent('Add the family\'s Stripe customer ID before creating a plan.')));
-    }
 
     // Ledger is authoritative and already committed; derive the amount from the
     // balance for this year (never gross tuition).
@@ -295,11 +293,28 @@ router.post('/:id/plan', loadFamily, async (req, res, next) => {
       return res.redirect(back('err=' + encodeURIComponent('Balance must be greater than zero to create a plan.')));
     }
 
+    // Auto-create the Stripe customer if the family doesn't have one — no need to
+    // create it in the Stripe dashboard first.
+    let customerId = req.family.stripe_customer_id;
+    if (!customerId) {
+      try {
+        const customer = await stripe.customers.create({
+          name: req.family.name,
+          email: req.family.email,
+          metadata: { family_id: String(req.family.id), external_id: req.family.external_id },
+        });
+        customerId = customer.id;
+        await q.setStripeCustomerId(req.family.id, customerId);
+      } catch (e) {
+        return res.redirect(back('err=' + encodeURIComponent(`Stripe (creating customer): ${e.message}`)));
+      }
+    }
+
     let result;
     try {
       result = await plans.createPlan({
         stripe,
-        customerId: req.family.stripe_customer_id,
+        customerId,
         familyId: req.family.id,
         schoolYear,
         plan,

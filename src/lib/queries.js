@@ -381,6 +381,13 @@ async function setPlan(familyId, { plan, subscriptionId, invoiceId, awaitingAuth
   );
 }
 
+async function setStripeCustomerId(familyId, customerId) {
+  await query(
+    `UPDATE families SET stripe_customer_id = @cid WHERE id = @id;`,
+    { id: { type: sql.Int, value: familyId }, cid: { type: sql.NVarChar(50), value: customerId } }
+  );
+}
+
 async function clearAwaitingAuth(familyId) {
   await query(
     `UPDATE families SET plan_awaiting_auth = 0 WHERE id = @id AND plan_awaiting_auth = 1;`,
@@ -479,6 +486,33 @@ async function applyStandardTuitionToAll(year, createdBy = null) {
     totals.unchanged += res.unchanged;
   }
   return totals;
+}
+
+// Dry-run of applyStandardTuition: how many active students are NOT yet billed
+// the current standard tuition for the year (so the UI only nudges when needed).
+async function tuitionApplyStatus(familyId, year) {
+  const rate = await getTuitionRate(year);
+  if (!rate) return { rate: null, needsApply: 0, total: 0 };
+  const desc = tuitionDescription(year);
+  const rateCents = Math.round(Number(rate.annual_tuition) * 100);
+  const [students, charges] = await Promise.all([
+    getStudentsForFamily(familyId, year),
+    getChargesForFamily(familyId, year),
+  ]);
+  const byStudent = new Map();
+  for (const c of charges) {
+    if (c.voided || c.description !== desc) continue;
+    if (!byStudent.has(c.student_id)) byStudent.set(c.student_id, []);
+    byStudent.get(c.student_id).push(c);
+  }
+  const active = students.filter((s) => s.active !== false);
+  let needsApply = 0;
+  for (const s of active) {
+    const ex = byStudent.get(s.id) || [];
+    const matches = ex.filter((c) => Math.round(Number(c.amount) * 100) === rateCents);
+    if (!(ex.length === 1 && matches.length === 1)) needsApply++;
+  }
+  return { rate: rate.annual_tuition, needsApply, total: active.length };
 }
 
 async function listOptionalItems(activeOnly = true) {
@@ -606,6 +640,7 @@ module.exports = {
   nextExternalId,
   createFamily,
   updateFamily,
+  setStripeCustomerId,
   setPlan,
   clearAwaitingAuth,
   addCharge,
@@ -617,6 +652,7 @@ module.exports = {
   upsertTuitionRate,
   applyStandardTuition,
   applyStandardTuitionToAll,
+  tuitionApplyStatus,
   listOptionalItems,
   getOptionalItem,
   createOptionalItem,

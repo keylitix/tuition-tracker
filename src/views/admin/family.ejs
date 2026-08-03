@@ -41,8 +41,6 @@
       <p>Send the parent this link to add their bank details:
         <a href="<%= customerPortalUrl %>" target="_blank" rel="noopener"><%= customerPortalUrl %></a></p>
     <% } %>
-  <% } else if (!family.stripe_customer_id) { %>
-    <p class="muted">Add the family's Stripe customer ID (in Family &amp; contact info below) before creating a plan.</p>
   <% } else if (planBalance <= 0) { %>
     <p class="muted">Balance for <%= planYear %> is <%= money(planBalance) %> — nothing to bill. Add charges first.</p>
   <% } else { %>
@@ -74,6 +72,7 @@
       </div>
       <p class="muted" style="margin-top:10px">
         Set up charges and record any PCTC award <em>before</em> creating the plan — the amount is locked from the balance at creation time.
+        <% if (!family.stripe_customer_id) { %><br>A Stripe customer will be created for this family automatically.<% } %>
       </p>
     </form>
   <% } %>
@@ -132,18 +131,26 @@
 <div class="card">
   <h2>Charges</h2>
 
-  <!-- Start at standard tuition (per student), then work backwards with payments. -->
+  <!-- Standard tuition status. Only nudges to "apply" when a student actually
+       needs it (e.g. a newly added sibling); otherwise it's just informational. -->
   <div class="toolbar" style="justify-content:space-between;background:#eef3fb;border:1px solid #cfddf1;border-radius:8px;padding:10px 12px">
-    <% if (tuitionRate !== null) { %>
-      <span>Standard tuition: <strong><%= money(tuitionRate) %></strong> / student · <%= planYear %></span>
+    <% if (tuitionRate === null) { %>
+      <span class="muted">No standard tuition set for <%= planYear %>.</span>
+      <a class="btn secondary small" href="/admin/settings">Set it in Settings</a>
+    <% } else if (tuitionStatus.needsApply > 0) { %>
+      <span>
+        <strong><%= tuitionStatus.needsApply %></strong> student<%= tuitionStatus.needsApply === 1 ? '' : 's' %>
+        not yet billed the standard tuition (<%= money(tuitionRate) %>).
+      </span>
       <form class="inline" method="post" action="/admin/families/<%= family.id %>/apply-tuition">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <input type="hidden" name="school_year" value="<%= planYear %>">
         <button class="small" type="submit">Apply standard tuition</button>
       </form>
+    <% } else if (tuitionStatus.total > 0) { %>
+      <span class="muted">✓ All students billed the standard tuition (<%= money(tuitionRate) %> · <%= planYear %>). Nothing to do here.</span>
     <% } else { %>
-      <span class="muted">No standard tuition set for <%= planYear %>.</span>
-      <a class="btn secondary small" href="/admin/settings">Set it in Settings</a>
+      <span class="muted">Standard tuition is <%= money(tuitionRate) %> / student · <%= planYear %>. Add a student to bill it.</span>
     <% } %>
   </div>
 
