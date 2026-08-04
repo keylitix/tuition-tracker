@@ -10,9 +10,20 @@ const express = require('express');
 const q = require('../lib/queries');
 const { streamStatement } = require('../lib/pdf');
 const checkout = require('../lib/checkout');
+const plans = require('../lib/plans');
 const stripe = require('../lib/stripeClient');
 const { currentSchoolYear } = require('../lib/schoolYear');
 const config = require('../config');
+
+// Per-payment amount for each autopay option (null if not applicable).
+function planPreviews(balanceDollars) {
+  const out = {};
+  for (const p of ['monthly', 'semester']) {
+    try { out[p] = plans.computePlan(balanceDollars, p).amountsCents[0] / 100; }
+    catch (_) { out[p] = null; }
+  }
+  return out;
+}
 
 const router = express.Router();
 
@@ -41,15 +52,19 @@ router.get('/', async (req, res, next) => {
       balance,
       hasStripeCustomer: !!family.stripe_customer_id,
       hasPlan: !!family.payment_plan,
+      previews: planPreviews(balance.balance),
       flash: portalFlash(req.query),
       error: req.query.err || null,
     });
   } catch (err) { next(err); }
 });
 
-// Pay the full current balance now (one-time ACH).
-router.post('/pay', async (req, res, next) => {
+// One payment picker: pay in full now, or set up monthly / semester autopay.
+// Everything is collected on Stripe's hosted Checkout (ACH), so the app never
+// touches bank details.
+router.post('/checkout', async (req, res, next) => {
   try {
+    const choice = String(req.body.choice || '').trim();
     const family = await q.getFamily(req.familyId);
     const bal = await q.getFamilyBalance(req.familyId);
     if (bal.balance <= 0) {
@@ -57,36 +72,22 @@ router.post('/pay', async (req, res, next) => {
     }
     let url;
     try {
-      url = await checkout.createBalanceCheckout(stripe, {
-        family, balanceDollars: bal.balance, schoolYear: currentSchoolYear(),
-      });
+      if (choice === 'full') {
+        url = await checkout.createBalanceCheckout(stripe, {
+          family, balanceDollars: bal.balance, schoolYear: currentSchoolYear(),
+        });
+      } else if (choice === 'monthly' || choice === 'semester') {
+        url = await checkout.createAutopayCheckout(stripe, {
+          family, plan: choice, balanceDollars: bal.balance, schoolYear: currentSchoolYear(),
+        });
+      } else {
+        return res.redirect('/portal?err=' + encodeURIComponent('Please choose a payment option.'));
+      }
     } catch (e) {
-      console.error('Balance checkout failed:', e.message);
+      console.error('Checkout failed:', e.message);
       return res.redirect('/portal?err=' + encodeURIComponent('Online payment is temporarily unavailable. Please try again later or contact the office.'));
     }
     res.redirect(url); // -> Stripe Checkout (external)
-  } catch (err) { next(err); }
-});
-
-// Set up recurring ACH autopay (monthly or semester).
-router.post('/autopay', async (req, res, next) => {
-  try {
-    const plan = String(req.body.plan || '').trim();
-    const family = await q.getFamily(req.familyId);
-    const bal = await q.getFamilyBalance(req.familyId);
-    if (bal.balance <= 0) {
-      return res.redirect('/portal?err=' + encodeURIComponent('Your balance is already paid in full.'));
-    }
-    let url;
-    try {
-      url = await checkout.createAutopayCheckout(stripe, {
-        family, plan, balanceDollars: bal.balance, schoolYear: currentSchoolYear(),
-      });
-    } catch (e) {
-      console.error('Autopay checkout failed:', e.message);
-      return res.redirect('/portal?err=' + encodeURIComponent('Could not start autopay. Please try again later or contact the office.'));
-    }
-    res.redirect(url);
   } catch (err) { next(err); }
 });
 
