@@ -42,25 +42,38 @@ function mapMethod(pmType) {
   return null;
 }
 
-// Best-effort ach vs card. Uses the live Stripe client to expand the
-// PaymentIntent; falls back to 'card' and queues a deferred warning when unknown.
-// Deferred warnings are logged after commit so they aren't rolled back.
-async function detectMethod(stripeClient, invoice, ctx, warnings) {
-  const piId = invoice.payment_intent;
-  if (stripeClient && piId) {
-    try {
-      const pi = await stripeClient.paymentIntents.retrieve(piId, { expand: ['latest_charge'] });
-      const type = pi.latest_charge && pi.latest_charge.payment_method_details
-        ? pi.latest_charge.payment_method_details.type
-        : (pi.payment_method_types && pi.payment_method_types[0]);
-      const mapped = mapMethod(type);
-      if (mapped) return mapped;
-    } catch (err) {
-      warnings.push({ ...ctx, message: `Could not retrieve PaymentIntent ${piId}: ${err.message}` });
+// Best-effort ach vs card for a paid invoice. Tries several sources because the
+// field that carries the payment method has moved across Stripe API versions
+// (invoice.payment_intent was dropped in newer versions): the PaymentIntent if
+// present, then the invoice's charge, then the customer's default payment method.
+// A miss is a display-detail, not an admin-actionable error, so it is logged to
+// the server only (never to the roster's webhook-issue banner). Defaults to 'ach'
+// since that is this school's primary method.
+async function detectMethod(stripeClient, invoice) {
+  if (!stripeClient) return 'ach';
+  try {
+    let type = null;
+    if (invoice.payment_intent) {
+      const pi = await stripeClient.paymentIntents.retrieve(invoice.payment_intent, { expand: ['latest_charge'] });
+      type = (pi.latest_charge && pi.latest_charge.payment_method_details && pi.latest_charge.payment_method_details.type)
+        || (pi.payment_method_types && pi.payment_method_types[0]);
     }
+    if (!mapMethod(type) && invoice.charge) {
+      const ch = await stripeClient.charges.retrieve(invoice.charge);
+      type = ch.payment_method_details && ch.payment_method_details.type;
+    }
+    if (!mapMethod(type) && invoice.customer) {
+      const cust = await stripeClient.customers.retrieve(invoice.customer);
+      const pmId = cust.invoice_settings && cust.invoice_settings.default_payment_method;
+      if (pmId) { const pm = await stripeClient.paymentMethods.retrieve(pmId); type = pm.type; }
+    }
+    const mapped = mapMethod(type);
+    if (mapped) return mapped;
+  } catch (err) {
+    console.warn(`detectMethod for invoice ${invoice.id}: ${err.message}`);
   }
-  warnings.push({ ...ctx, message: `Payment method type unknown for invoice ${invoice.id}; recorded as card.` });
-  return 'card';
+  console.warn(`Could not determine payment method for invoice ${invoice.id}; defaulting to ach.`);
+  return 'ach';
 }
 
 function pickSchoolYear(metadata) {
@@ -79,7 +92,7 @@ async function handleInvoicePaid(run, invoice, ctx, deferred, stripeClient) {
     deferred.warnings.push({ ...ctx, message: `invoice.paid for unmatched customer ${invoice.customer} (invoice ${invoice.id}).`, payload: invoice });
     return;
   }
-  const method = await detectMethod(stripeClient, invoice, ctx, deferred.warnings);
+  const method = await detectMethod(stripeClient, invoice);
   const amount = (invoice.amount_paid || 0) / 100;
   const schoolYear = pickSchoolYear(invoice.metadata);
 
