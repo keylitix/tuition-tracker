@@ -127,6 +127,21 @@ async function getRosterSummary({ year }) {
 /* Admin — family detail (spec §6.2)                                   */
 /* ------------------------------------------------------------------ */
 
+// The family's most recent school year that has any data (students, charges, or
+// payments). Used to scope/label a statement when no year is specified.
+async function familyLatestSchoolYear(familyId) {
+  const r = await query(
+    `SELECT MAX(school_year) AS y FROM (
+        SELECT school_year FROM students WHERE family_id = @fid
+        UNION SELECT ch.school_year FROM charges ch
+               JOIN students s ON s.id = ch.student_id WHERE s.family_id = @fid
+        UNION SELECT school_year FROM payments WHERE family_id = @fid
+     ) x WHERE school_year IS NOT NULL;`,
+    { fid: { type: sql.Int, value: familyId } }
+  );
+  return r.recordset[0] ? r.recordset[0].y : null;
+}
+
 async function getFamily(familyId) {
   const r = await query('SELECT * FROM families WHERE id = @id;', {
     id: { type: sql.Int, value: familyId },
@@ -644,6 +659,7 @@ module.exports = {
   getRoster,
   getRosterSummary,
   getFamily,
+  familyLatestSchoolYear,
   getFamilyByEmail,
   findFamilyByExternalId,
   findStudentByExternalId,

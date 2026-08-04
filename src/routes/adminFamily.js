@@ -362,7 +362,11 @@ router.post('/:id/plan', loadFamily, async (req, res, next) => {
 // PDF statement for this family (admins may view any family — spec §6.5)
 router.get('/:id/statement.pdf', loadFamily, async (req, res, next) => {
   try {
-    const year = req.query.year || null;
+    // Scope the statement to a real school year — the one asked for, else the
+    // family's most recent, else the current year (never "all years").
+    const year = req.query.year
+      || (await q.familyLatestSchoolYear(req.family.id))
+      || currentSchoolYear();
     const vm = await detailViewModel(req.family, year);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="statement-${req.family.external_id}.pdf"`);

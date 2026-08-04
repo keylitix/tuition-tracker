@@ -109,15 +109,16 @@ router.get('/billing', async (req, res, next) => {
 router.get('/statement.pdf', async (req, res, next) => {
   try {
     const family = await q.getFamily(req.familyId);
+    const year = (await q.familyLatestSchoolYear(req.familyId)) || currentSchoolYear();
     const [students, charges, payments, balance] = await Promise.all([
-      q.getStudentsForFamily(req.familyId),
-      q.getChargesForFamily(req.familyId),
-      q.getPaymentsForFamily(req.familyId),
-      q.getFamilyBalance(req.familyId),
+      q.getStudentsForFamily(req.familyId, year),
+      q.getChargesForFamily(req.familyId, year),
+      q.getPaymentsForFamily(req.familyId, year),
+      q.getFamilyBalance(req.familyId, year),
     ]);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="statement.pdf"`);
-    streamStatement(res, { family, schoolYear: null, students, charges, payments, balance });
+    streamStatement(res, { family, schoolYear: year, students, charges, payments, balance });
   } catch (err) { next(err); }
 });
 
