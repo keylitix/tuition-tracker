@@ -11,10 +11,10 @@
   <ol style="margin:6px 0 0;padding-left:20px;line-height:1.9">
     <li><a class="btn small" href="/admin/import/template.csv">Download the template</a> — a spreadsheet with the right columns.</li>
     <li>Open it in Excel or Google Sheets. <strong>Replace the example rows</strong> with your families — one row per student, repeating the family name/email for siblings.</li>
-    <li>Save it as CSV, then <strong>upload it below</strong> and click Import.</li>
-    <li>After importing, go to <a href="/admin/settings">Settings → Sync all families</a> to apply the standard tuition, then review each family (PCTC, scholarships) and email their sign-in link.</li>
+    <li>Save it as CSV, then <strong>upload it below</strong> and click Import. The standard tuition is applied to each student automatically.</li>
+    <li>Then review each family for PCTC awards or scholarships, and email their sign-in link.</li>
   </ol>
-  <p class="muted" style="margin:12px 0 0">Re-running an import is safe — families/students already in the system are matched, never duplicated.</p>
+  <p class="muted" style="margin:12px 0 0">Set the <a href="/admin/settings">standard tuition rate</a> before importing so it can be applied. Re-running an import is safe — families/students already in the system are matched, never duplicated.</p>
 </div>
 
 <% if (result) { %>
@@ -25,6 +25,7 @@
       <div class="tile"><div class="label">Families</div><div class="value"><%= result.familiesCreated %> new</div><div class="muted"><%= result.familiesMatched %> matched</div></div>
       <div class="tile"><div class="label">Students</div><div class="value"><%= result.studentsCreated %> new</div><div class="muted"><%= result.studentsSkipped %> existing</div></div>
       <div class="tile"><div class="label">Charges</div><div class="value"><%= result.chargesCreated %> new</div><div class="muted"><%= result.chargesSkipped %> existing</div></div>
+      <div class="tile"><div class="label">Tuition applied</div><div class="value"><%= (result.tuitionApplied || 0) %></div><div class="muted">students</div></div>
     </div>
     <% if (result.errors.length) { %>
       <div class="errorbox">

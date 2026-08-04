@@ -35,6 +35,7 @@ function emptyResult() {
     familiesCreated: 0, familiesMatched: 0,
     studentsCreated: 0, studentsSkipped: 0,
     chargesCreated: 0, chargesSkipped: 0,
+    tuitionApplied: 0,
     errors: [],
   };
 }
@@ -54,6 +55,11 @@ async function importCsv(text) {
     res.errors.push({ row: 0, message: `Could not parse CSV: ${err.message}` });
     return res;
   }
+
+  // If the CSV specifies its own charges, respect them; otherwise we auto-apply
+  // the standard tuition to each family/year after import.
+  const hasChargeColumns = rows.length > 0 && ('charge_amount' in rows[0] || 'charge_description' in rows[0]);
+  const touched = new Set();
 
   let rowNum = 1; // header is line 1
   for (const row of rows) {
@@ -118,6 +124,7 @@ async function importCsv(text) {
             }
           }
         }
+        if (studentId && schoolYear) touched.add(`${family.id}|${schoolYear}`);
       }
 
       // --- optional charge (one per row) ---
@@ -156,6 +163,21 @@ async function importCsv(text) {
       res.errors.push({ row: rowNum, message: err.message });
     }
   }
+
+  // Auto-apply the standard tuition to every family/year we touched (unless the
+  // CSV brought its own charges). Idempotent — re-imports don't double-charge.
+  if (!hasChargeColumns) {
+    for (const key of touched) {
+      const [fid, year] = key.split('|');
+      try {
+        const r = await q.applyStandardTuition(parseInt(fid, 10), year, null);
+        res.tuitionApplied += r.added + r.repriced;
+      } catch (e) {
+        res.errors.push({ row: 0, message: `Could not apply standard tuition for family ${fid}: ${e.message}` });
+      }
+    }
+  }
+
   return res;
 }
 
