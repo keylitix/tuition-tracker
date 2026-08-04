@@ -1,9 +1,21 @@
 <%- include('../partials/head') %>
 
 <p class="muted"><a href="/admin">&larr; Families</a></p>
-<h1>Import families (CSV)</h1>
+<h1>Import families</h1>
 
 <% if (typeof error !== 'undefined' && error) { %><div class="errorbox"><%= error %></div><% } %>
+
+<!-- Step-by-step for the office -->
+<div class="card" style="background:#eef3fb;border-color:#cfddf1">
+  <h2 style="margin-top:14px">How to import your families</h2>
+  <ol style="margin:6px 0 0;padding-left:20px;line-height:1.9">
+    <li><a class="btn small" href="/admin/import/template.csv">Download the template</a> — a spreadsheet with the right columns.</li>
+    <li>Open it in Excel or Google Sheets. <strong>Replace the example rows</strong> with your families — one row per student, repeating the family name/email for siblings.</li>
+    <li>Save it as CSV, then <strong>upload it below</strong> and click Import.</li>
+    <li>After importing, go to <a href="/admin/settings">Settings → Sync all families</a> to apply the standard tuition, then review each family (PCTC, scholarships) and email their sign-in link.</li>
+  </ol>
+  <p class="muted" style="margin:12px 0 0">Re-running an import is safe — families/students already in the system are matched, never duplicated.</p>
+</div>
 
 <% if (result) { %>
   <div class="card">
@@ -28,23 +40,25 @@
 <% } %>
 
 <div class="card">
-  <h2>Paste CSV</h2>
-  <p class="muted">
-    First row must be a header. Columns (any order; extras ignored):
-    <code>family_external_id, family_name, family_email, family_phone, stripe_customer_id,
-    student_external_id, student_first_name, student_last_name, grade, school_year,
-    charge_description, charge_amount, charge_due_date</code>.
-    One row per student; repeat the family columns for siblings. Re-running is safe —
-    existing families/students/charges are matched, not duplicated.
-  </p>
+  <h2>Upload your file</h2>
   <form method="post" action="/admin/import">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-    <textarea name="csv" rows="12" style="font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="family_name,family_email,student_first_name,student_last_name,school_year,charge_description,charge_amount
-Doe Family,doe@example.com,Jane,Doe,2026-2027,Tuition 2026-2027,6000
-Doe Family,doe@example.com,John,Doe,2026-2027,Tuition 2026-2027,6000"><%= csv %></textarea>
-    <div style="margin-top:12px"><button type="submit">Import</button></div>
+    <label for="csv-file">Choose your filled-in CSV file</label>
+    <input id="csv-file" type="file" accept=".csv,text/csv">
+    <p id="csv-file-name" class="muted" style="margin:6px 0 0"></p>
+
+    <details style="margin-top:14px">
+      <summary class="muted">…or paste the rows directly</summary>
+      <textarea id="csv" name="csv" rows="10" style="margin-top:8px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="Family Name,Family Email,Student First Name,Student Last Name,Grade,School Year
+Doe Family,doe@example.com,Jane,Doe,3,2026-2027
+Doe Family,doe@example.com,John,Doe,5,2026-2027"><%= csv %></textarea>
+    </details>
+
+    <div style="margin-top:14px"><button type="submit">Import</button></div>
   </form>
-  <p class="muted">For large files, use the CLI instead: <code>npm run import -- path\to\file.csv</code></p>
+  <p class="muted" style="margin-top:10px">Columns accepted (from the template): Family Name, Family Email, Family Phone, Student First Name, Student Last Name, Grade, School Year.</p>
 </div>
+
+<script src="/public/js/import.js"></script>
 
 <%- include('../partials/foot') %>
