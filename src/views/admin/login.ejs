@@ -2,6 +2,7 @@
 <div class="center-narrow">
   <div class="card">
     <h1>Admin sign in</h1>
+    <% if (typeof notice !== 'undefined' && notice) { %><div class="flash"><%= notice %></div><% } %>
     <% if (error) { %><div class="errorbox"><%= error %></div><% } %>
     <form method="post" action="/admin/login">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -11,6 +12,7 @@
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <div style="margin-top:16px"><button type="submit">Sign in</button></div>
     </form>
+    <p class="muted" style="margin:14px 0 0"><a href="/admin/forgot">Forgot your password?</a></p>
   </div>
 </div>
 <%- include('../partials/foot') %>

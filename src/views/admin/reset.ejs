@@ -1,0 +1,17 @@
+<%- include('../partials/head') %>
+<div class="center-narrow">
+  <div class="card">
+    <h1>Set a new password</h1>
+    <% if (error) { %><div class="errorbox"><%= error %></div><% } %>
+    <form method="post" action="/admin/reset">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="token" value="<%= token %>">
+      <label for="password">New password <span class="muted">(at least 8 characters)</span></label>
+      <input id="password" name="password" type="password" autocomplete="new-password" required autofocus>
+      <label for="confirm">Confirm new password</label>
+      <input id="confirm" name="confirm" type="password" autocomplete="new-password" required>
+      <div style="margin-top:16px"><button type="submit">Set new password</button></div>
+    </form>
+  </div>
+</div>
+<%- include('../partials/foot') %>

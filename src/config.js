@@ -67,6 +67,12 @@ const config = {
     ttlMinutes: 15,
     ratePerEmailPerHour: 5,
   },
+
+  // Admin password-reset tuning
+  adminReset: {
+    ttlMinutes: 30,
+    ratePerEmailPerHour: 5,
+  },
 };
 
 module.exports = config;

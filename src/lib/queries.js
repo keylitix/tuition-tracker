@@ -602,6 +602,20 @@ async function upsertAdmin({ email, displayName, passwordHash }) {
   );
 }
 
+async function getAdminByEmail(email) {
+  const r = await query('SELECT * FROM admin_users WHERE email = @email AND active = 1;', {
+    email: { type: sql.NVarChar(255), value: email },
+  });
+  return r.recordset[0] || null;
+}
+
+async function setAdminPassword(adminId, passwordHash) {
+  await query('UPDATE admin_users SET password_hash = @hash WHERE id = @id AND active = 1;', {
+    id: { type: sql.Int, value: adminId },
+    hash: { type: sql.NVarChar(255), value: passwordHash },
+  });
+}
+
 async function deactivateAdmin(id) {
   await query('UPDATE admin_users SET active = 0 WHERE id = @id;', {
     id: { type: sql.Int, value: id },
@@ -661,6 +675,8 @@ module.exports = {
   endorsePctc,
   listAdmins,
   upsertAdmin,
+  getAdminByEmail,
+  setAdminPassword,
   deactivateAdmin,
   countActiveAdmins,
   getOpenWebhookErrors,

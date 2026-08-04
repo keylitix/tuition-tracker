@@ -42,4 +42,25 @@ async function sendMagicLink(email, url) {
   await tx.sendMail({ from: config.mail.from, to: email, subject, text, html });
 }
 
-module.exports = { sendMagicLink };
+async function sendPasswordReset(email, url) {
+  const subject = `${config.school.name} — reset your admin password`;
+  const text =
+    `We received a request to reset your Tuition Tracker admin password.\n\n` +
+    `Reset it here:\n${url}\n\n` +
+    `This link expires in ${config.adminReset.ttlMinutes} minutes and can be used once.\n` +
+    `If you did not request it, you can ignore this email — your password will not change.`;
+  const html =
+    `<p>We received a request to reset your Tuition Tracker admin password.</p>` +
+    `<p><a href="${url}">Reset your password</a></p>` +
+    `<p>This link expires in ${config.adminReset.ttlMinutes} minutes and can be used once. ` +
+    `If you did not request it, you can ignore this email — your password will not change.</p>`;
+
+  const tx = getTransporter();
+  if (!tx) {
+    console.log(`\n[mailer] (no SMTP configured) admin reset link for ${email}:\n${url}\n`);
+    return;
+  }
+  await tx.sendMail({ from: config.mail.from, to: email, subject, text, html });
+}
+
+module.exports = { sendMagicLink, sendPasswordReset };
