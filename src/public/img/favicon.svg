@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="The Farm Academy">
+  <rect width="64" height="64" rx="14" fill="#034187"/>
+  <!-- sprout stem -->
+  <path d="M32 30 V16" fill="none" stroke="#2f8f4f" stroke-width="2.4" stroke-linecap="round"/>
+  <!-- leaves -->
+  <path d="M32 22c-6.5-.5-10-4.5-10-9.5 5.2-.2 9.6 3 10 9.5z" fill="#41a35c"/>
+  <path d="M32 20c6-.5 9.2-4.5 9.2-9.2-4.9-.2-9 2.9-9.2 9.2z" fill="#4fb56b"/>
+  <!-- open book -->
+  <path d="M32 30 13 34.5v17l19-4z" fill="#d72323"/>
+  <path d="M32 30 51 34.5v17l-19-4z" fill="#e84040"/>
+  <path d="M32 30v17.5" fill="none" stroke="#ffffff" stroke-width="1.6" opacity=".9"/>
+  <!-- page lines -->
+  <g stroke="#ffffff" stroke-width="1.1" stroke-linecap="round" opacity=".6">
+    <path d="M18 39l10-2.1M18 44l10-2.1"/>
+    <path d="M46 39l-10-2.1M46 44l-10-2.1"/>
+  </g>
+</svg>
