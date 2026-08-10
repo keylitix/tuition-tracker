@@ -22,11 +22,16 @@
   </div>
 </div>
 
-<div class="toolbar">
+<div class="toolbar" style="align-items:center">
   <form class="inline" method="post" action="/admin/families/<%= family.id %>/send-link">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <button type="submit">Email sign-in link to parent</button>
   </form>
+  <% if (family.link_emailed_at) { %>
+    <span class="muted" style="font-size:13px">Last emailed <%= fmtDateTime(family.link_emailed_at) %></span>
+  <% } else { %>
+    <span class="muted" style="font-size:13px">Sign-in link not sent yet</span>
+  <% } %>
   <a class="btn secondary" href="/admin/families/<%= family.id %>/statement.pdf<%= year ? '?year=' + year : '' %>">Download statement (PDF)</a>
   <% if (family.stripe_customer_id && stripePortalBase) { %>
     <a class="btn secondary" href="https://dashboard.stripe.com/test/customers/<%= family.stripe_customer_id %>" target="_blank" rel="noopener">Open in Stripe</a>

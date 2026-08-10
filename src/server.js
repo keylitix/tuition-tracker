@@ -25,6 +25,16 @@ app.locals.fmtDate = (d) => {
   const dt = d instanceof Date ? d : new Date(d);
   return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10);
 };
+// Date + time in the school's local (Central) timezone.
+app.locals.fmtDateTime = (d) => {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  return dt.toLocaleString('en-US', {
+    timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  });
+};
 app.locals.school = config.school;
 
 app.set('view engine', 'ejs');

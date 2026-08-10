@@ -1,6 +1,10 @@
 <%- include('../partials/head') %>
 
 <h1>Families <span class="muted">— <%= year %></span></h1>
+<p class="muted" style="margin:-8px 0 14px">
+  <strong><%= summary.family_count %></strong> famil<%= summary.family_count === 1 ? 'y' : 'ies' %>
+  · <strong><%= summary.student_count %></strong> student<%= summary.student_count === 1 ? '' : 's' %> in <%= year %>
+</p>
 
 <% if (webhookErrorCount > 0) { %>
   <div class="errorbox">

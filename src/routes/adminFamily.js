@@ -177,6 +177,7 @@ router.post('/:id/send-link', loadFamily, async (req, res, next) => {
       console.error('Admin send-link failed:', e.message);
       return res.redirect(`/admin/families/${req.family.id}?err=` + encodeURIComponent('Could not send the email. Check the mail settings.'));
     }
+    await q.setLinkEmailedAt(req.family.id);
     res.redirect(`/admin/families/${req.family.id}?ok=` + encodeURIComponent(`Sign-in link emailed to ${req.family.email}.`));
   } catch (err) { next(err); }
 });

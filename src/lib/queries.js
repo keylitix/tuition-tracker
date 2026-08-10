@@ -113,7 +113,9 @@ async function getRosterSummary({ year }) {
          WHERE method = 'pctc' AND pctc_endorsed_on IS NULL AND school_year = @year) AS unendorsed_pctc_count,
       (SELECT ISNULL(SUM(amount), 0)
          FROM payments
-         WHERE method = 'pctc' AND pctc_endorsed_on IS NULL AND school_year = @year) AS unendorsed_pctc_amount
+         WHERE method = 'pctc' AND pctc_endorsed_on IS NULL AND school_year = @year) AS unendorsed_pctc_amount,
+      (SELECT COUNT(*) FROM families WHERE active = 1)                              AS family_count,
+      (SELECT COUNT(*) FROM students WHERE active = 1 AND school_year = @year)      AS student_count
     ;
     `,
     { year: { type: sql.NVarChar(9), value: year } }
@@ -396,6 +398,13 @@ async function setPlan(familyId, { plan, subscriptionId, invoiceId, awaitingAuth
   );
 }
 
+// Record that the office just emailed this family their sign-in link.
+async function setLinkEmailedAt(familyId) {
+  await query('UPDATE families SET link_emailed_at = SYSUTCDATETIME() WHERE id = @id;', {
+    id: { type: sql.Int, value: familyId },
+  });
+}
+
 async function setStripeCustomerId(familyId, customerId) {
   await query(
     `UPDATE families SET stripe_customer_id = @cid WHERE id = @id;`,
@@ -670,6 +679,7 @@ module.exports = {
   nextExternalId,
   createFamily,
   updateFamily,
+  setLinkEmailedAt,
   setStripeCustomerId,
   setPlan,
   clearAwaitingAuth,
