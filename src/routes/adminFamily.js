@@ -169,10 +169,12 @@ router.post('/:id/send-link', loadFamily, async (req, res, next) => {
     if (!req.family.email) {
       return res.redirect(`/admin/families/${req.family.id}?err=` + encodeURIComponent('This family has no email on file.'));
     }
-    const token = await magic.createToken(req.family.id);
+    // Office-sent links don't expire (single-use) so a parent can click whenever
+    // they get to their inbox.
+    const token = await magic.createToken(req.family.id, config.magicLink.adminSentTtlMinutes);
     const url = `${config.baseUrl}/portal/verify?token=${token}`;
     try {
-      await sendMagicLink(req.family.email, url);
+      await sendMagicLink(req.family.email, url, { expiring: false });
     } catch (e) {
       console.error('Admin send-link failed:', e.message);
       return res.redirect(`/admin/families/${req.family.id}?err=` + encodeURIComponent('Could not send the email. Check the mail settings.'));

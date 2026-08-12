@@ -26,7 +26,10 @@ async function recentRequestCount(familyId) {
   return r.recordset[0].n;
 }
 
-async function createToken(familyId) {
+// ttlMinutes defaults to the short parent self-service window. Office-sent links
+// pass a long TTL (config.magicLink.adminSentTtlMinutes) so they don't expire
+// before a parent gets to their inbox — they remain single-use either way.
+async function createToken(familyId, ttlMinutes = config.magicLink.ttlMinutes) {
   const token = generateToken();
   const tokenHash = hashToken(token);
   await query(
@@ -35,7 +38,7 @@ async function createToken(familyId) {
     {
       hash: { type: sql.NVarChar(128), value: tokenHash },
       familyId: { type: sql.Int, value: familyId },
-      ttl: { type: sql.Int, value: config.magicLink.ttlMinutes },
+      ttl: { type: sql.Int, value: ttlMinutes },
     }
   );
   return token;

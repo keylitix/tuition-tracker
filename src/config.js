@@ -64,7 +64,8 @@ const config = {
 
   // Magic-link tuning (spec §8)
   magicLink: {
-    ttlMinutes: 15,
+    ttlMinutes: 15,                        // parent self-service: short-lived
+    adminSentTtlMinutes: 60 * 24 * 3650,   // office-sent: ~10 years = effectively no expiry (still single-use)
     ratePerEmailPerHour: 5,
   },
 

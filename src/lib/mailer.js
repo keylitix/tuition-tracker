@@ -21,16 +21,19 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendMagicLink(email, url) {
+async function sendMagicLink(email, url, { expiring = true } = {}) {
   const subject = `${config.school.name} — your sign-in link`;
+  const validity = expiring
+    ? `This link expires in ${config.magicLink.ttlMinutes} minutes and can be used once.`
+    : `This link can be used once — click it whenever you're ready.`;
   const text =
-    `Sign in to view your tuition statement:\n\n${url}\n\n` +
-    `This link expires in ${config.magicLink.ttlMinutes} minutes and can be used once.\n` +
+    `Sign in to view your tuition and make a payment:\n\n${url}\n\n` +
+    `${validity}\n` +
     `If you did not request it, you can ignore this email.`;
   const html =
-    `<p>Sign in to view your tuition statement:</p>` +
+    `<p>Sign in to view your tuition and make a payment:</p>` +
     `<p><a href="${url}">${url}</a></p>` +
-    `<p>This link expires in ${config.magicLink.ttlMinutes} minutes and can be used once. ` +
+    `<p>${validity} ` +
     `If you did not request it, you can ignore this email.</p>`;
 
   const tx = getTransporter();
