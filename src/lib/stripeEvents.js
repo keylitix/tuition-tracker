@@ -155,13 +155,19 @@ async function handleInvoicePaid(run, invoice, ctx, deferred, stripeClient) {
 
 async function handleInvoicePaymentFailed(run, invoice, ctx, deferred, stripeClient) {
   const family = await resolveFamily(run, stripeClient, invoice.customer);
+  // A failure on the FIRST invoice of a new subscription almost always means the
+  // parent hasn't finished bank verification (ACH micro-deposits) — that's a
+  // "pending setup", not a real decline. A failure on a recurring cycle is a
+  // genuine decline (insufficient funds, closed account, etc.).
+  const kind = invoice.billing_reason === 'subscription_create' ? 'pending' : 'failed';
   await run(
-    `INSERT INTO payment_failures (family_id, stripe_invoice_id, amount)
-     VALUES (@fid, @inv, @amount);`,
+    `INSERT INTO payment_failures (family_id, stripe_invoice_id, amount, kind)
+     VALUES (@fid, @inv, @amount, @kind);`,
     {
       fid: { type: sql.Int, value: family ? family.id : null },
       inv: { type: sql.NVarChar(50), value: invoice.id || null },
       amount: { type: sql.Decimal(10, 2), value: (invoice.amount_due || 0) / 100 },
+      kind: { type: sql.NVarChar(20), value: kind },
     }
   );
   if (!family) {

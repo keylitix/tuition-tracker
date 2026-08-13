@@ -45,7 +45,8 @@ async function getRoster({ year, search = '' }) {
         ISNULL(c.total_charges, 0) - ISNULL(p.total_paid, 0)          AS balance,
         ISNULL(pctc.unendorsed_count, 0)                              AS unendorsed_pctc_count,
         ISNULL(pctc.unendorsed_amount, 0)                             AS unendorsed_pctc_amount,
-        CASE WHEN pf.family_id IS NOT NULL THEN 1 ELSE 0 END          AS has_failed_payment,
+        CASE WHEN pf_failed.family_id IS NOT NULL THEN 1 ELSE 0 END   AS has_failed_payment,
+        CASE WHEN pf_pending.family_id IS NOT NULL THEN 1 ELSE 0 END  AS awaiting_bank_verification,
         f.plan_awaiting_auth                                          AS awaiting_auth,
         CASE WHEN c.earliest_due IS NOT NULL
                   AND c.earliest_due < CAST(SYSUTCDATETIME() AS DATE)
@@ -80,8 +81,11 @@ async function getRoster({ year, search = '' }) {
         GROUP BY family_id
     ) pctc ON pctc.family_id = f.id
     LEFT JOIN (
-        SELECT DISTINCT family_id FROM payment_failures WHERE cleared = 0
-    ) pf ON pf.family_id = f.id
+        SELECT DISTINCT family_id FROM payment_failures WHERE cleared = 0 AND kind = 'failed'
+    ) pf_failed ON pf_failed.family_id = f.id
+    LEFT JOIN (
+        SELECT DISTINCT family_id FROM payment_failures WHERE cleared = 0 AND kind = 'pending'
+    ) pf_pending ON pf_pending.family_id = f.id
     WHERE f.active = 1
       AND (@search = '' OR f.name LIKE @searchLike OR EXISTS (
             SELECT 1 FROM students s2
