@@ -52,6 +52,7 @@ router.get('/', async (req, res, next) => {
       balance,
       hasStripeCustomer: !!family.stripe_customer_id,
       hasPlan: !!family.payment_plan,
+      planLabel: family.payment_plan ? (plans.PLAN_SPECS[family.payment_plan] || {}).label || family.payment_plan : null,
       previews: planPreviews(balance.balance),
       flash: portalFlash(req.query),
       error: req.query.err || null,
@@ -70,6 +71,9 @@ router.post('/checkout', async (req, res, next) => {
     if (bal.balance <= 0) {
       return res.redirect('/portal?err=' + encodeURIComponent('Your balance is already paid in full.'));
     }
+    // Don't let a parent pay twice — block if a plan or payment is already in flight.
+    const block = await checkout.existingPaymentBlock(stripe, family);
+    if (block) return res.redirect('/portal?err=' + encodeURIComponent(block));
     let url;
     try {
       if (choice === 'full') {

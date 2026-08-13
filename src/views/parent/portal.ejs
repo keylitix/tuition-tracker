@@ -12,7 +12,12 @@
     Charged <%= money(balance.charged) %> · Paid <%= money(balance.paid) %>
   </div>
 
-  <% if (balance.balance > 0) { %>
+  <% if (balance.balance > 0 && hasPlan) { %>
+    <div class="flash" style="margin-top:16px">
+      You're set up on <strong><%= planLabel %></strong> — your bank is drafted automatically each cycle.
+      To change how you pay, please contact the school office.
+    </div>
+  <% } else if (balance.balance > 0) { %>
     <h2 style="font-size:15px;margin:18px 0 8px">How would you like to pay?</h2>
     <form method="post" action="/portal/checkout" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">

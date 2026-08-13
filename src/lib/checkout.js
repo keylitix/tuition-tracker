@@ -92,6 +92,31 @@ async function createAutopayCheckout(stripe, { family, plan, balanceDollars, sch
   return session.url;
 }
 
+// Guard against a parent paying twice. Returns a message to show (and block) when
+// the family already has an active plan or a payment in flight; null if it's safe
+// to start a new checkout. Checks the ledger's plan flag first (no API call), then
+// Stripe for active subscriptions or a processing/awaiting-verification payment.
+async function existingPaymentBlock(stripe, family) {
+  if (family.payment_plan) {
+    return 'Your family is already set up on autopay — your bank is drafted automatically. To change how you pay, please contact the school office.';
+  }
+  if (!family.stripe_customer_id) return null;
+  try {
+    const subs = await stripe.subscriptions.list({ customer: family.stripe_customer_id, status: 'all', limit: 20 });
+    if (subs.data.some((s) => ['active', 'trialing', 'past_due', 'incomplete', 'unpaid'].includes(s.status))) {
+      return 'You already have autopay set up (it may still be verifying your bank). No need to pay again — if you need to change it, contact the school office.';
+    }
+    const pis = await stripe.paymentIntents.list({ customer: family.stripe_customer_id, limit: 20 });
+    if (pis.data.some((pi) => ['processing', 'requires_action'].includes(pi.status))) {
+      return 'You already have a payment in progress. Bank (ACH) payments take a few business days to clear — please wait for it to finish before paying again. If you think this is a mistake, contact the office.';
+    }
+  } catch (e) {
+    // If the check itself fails, don't block a legitimate payment — just log.
+    console.error('existingPaymentBlock check failed:', e.message);
+  }
+  return null;
+}
+
 // Deep-link into the family's Stripe Customer Portal (manage/replace bank details).
 // Requires the Customer Portal to be activated once in the Stripe dashboard.
 async function createBillingPortal(stripe, family) {
@@ -103,4 +128,4 @@ async function createBillingPortal(stripe, family) {
   return session.url;
 }
 
-module.exports = { createBalanceCheckout, createAutopayCheckout, createBillingPortal };
+module.exports = { createBalanceCheckout, createAutopayCheckout, createBillingPortal, existingPaymentBlock };
