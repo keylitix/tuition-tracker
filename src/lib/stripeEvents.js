@@ -36,6 +36,31 @@ async function findFamilyByCustomer(run, customerId) {
   return r.recordset[0] || null;
 }
 
+// Match a Stripe customer to a family, robust to event ordering: first by the
+// stored customer id, then (fallback) by the customer's email — and if matched
+// that way, link the customer id so future events resolve directly. This closes
+// the race where a payment event arrives before checkout.session.completed has
+// linked the customer.
+async function resolveFamily(run, stripeClient, customerId) {
+  if (!customerId) return null;
+  let fam = await findFamilyByCustomer(run, customerId);
+  if (fam || !stripeClient) return fam;
+  try {
+    const cust = await stripeClient.customers.retrieve(customerId);
+    const email = cust && !cust.deleted && cust.email ? cust.email.toLowerCase() : null;
+    if (email) {
+      const r = await run('SELECT TOP 1 * FROM families WHERE email = @e AND active = 1;',
+        { e: { type: sql.NVarChar(255), value: email } });
+      fam = r.recordset[0] || null;
+      if (fam && !fam.stripe_customer_id) {
+        await run('UPDATE families SET stripe_customer_id = @c WHERE id = @id AND stripe_customer_id IS NULL;',
+          { c: { type: sql.NVarChar(50), value: customerId }, id: { type: sql.Int, value: fam.id } });
+      }
+    }
+  } catch (_) { /* fall through to null */ }
+  return fam;
+}
+
 function mapMethod(pmType) {
   if (pmType === 'us_bank_account' || pmType === 'ach_debit' || pmType === 'ach_credit_transfer') return 'ach';
   if (pmType === 'card') return 'card';
@@ -87,7 +112,7 @@ function pickSchoolYear(metadata) {
 // (warning logs) that must not be rolled back.
 
 async function handleInvoicePaid(run, invoice, ctx, deferred, stripeClient) {
-  const family = await findFamilyByCustomer(run, invoice.customer);
+  const family = await resolveFamily(run, stripeClient, invoice.customer);
   if (!family) {
     deferred.warnings.push({ ...ctx, message: `invoice.paid for unmatched customer ${invoice.customer} (invoice ${invoice.id}).`, payload: invoice });
     return;
@@ -128,8 +153,8 @@ async function handleInvoicePaid(run, invoice, ctx, deferred, stripeClient) {
   });
 }
 
-async function handleInvoicePaymentFailed(run, invoice, ctx, deferred) {
-  const family = await findFamilyByCustomer(run, invoice.customer);
+async function handleInvoicePaymentFailed(run, invoice, ctx, deferred, stripeClient) {
+  const family = await resolveFamily(run, stripeClient, invoice.customer);
   await run(
     `INSERT INTO payment_failures (family_id, stripe_invoice_id, amount)
      VALUES (@fid, @inv, @amount);`,
@@ -145,7 +170,7 @@ async function handleInvoicePaymentFailed(run, invoice, ctx, deferred) {
   // No dunning/retry logic — Stripe Billing owns that (spec §2, §7).
 }
 
-async function handleChargeRefunded(run, charge, ctx, deferred) {
+async function handleChargeRefunded(run, charge, ctx, deferred, stripeClient) {
   const latestRefund = charge.refunds && charge.refunds.data && charge.refunds.data[0];
   const refundAmount = latestRefund ? latestRefund.amount : charge.amount_refunded;
   const amount = -(refundAmount || 0) / 100;
@@ -162,7 +187,7 @@ async function handleChargeRefunded(run, charge, ctx, deferred) {
       schoolYear = orig.recordset[0].school_year;
     }
   }
-  if (!family) family = await findFamilyByCustomer(run, charge.customer);
+  if (!family) family = await resolveFamily(run, stripeClient, charge.customer);
   if (!family) {
     deferred.warnings.push({ ...ctx, message: `charge.refunded for unmatched customer ${charge.customer} (charge ${charge.id}).`, payload: charge });
     return;
