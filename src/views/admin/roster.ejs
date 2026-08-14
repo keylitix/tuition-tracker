@@ -74,6 +74,7 @@
                 PCTC held <%= money(r.unendorsed_pctc_amount) %>
               </span>
             <% } %>
+            <% if (r.payment_processing) { %><span class="badge processing" title="An ACH bank payment was submitted and is clearing (takes a few business days). No action needed — it will post once it settles.">Payment processing</span><% } %>
             <% if (r.has_failed_payment) { %><span class="badge failed" title="A bank draft was declined — follow up with the family">Payment failed</span><% } %>
             <% if (r.awaiting_bank_verification) { %><span class="badge pctc" title="Autopay is set up but the parent hasn't finished verifying their bank (ACH micro-deposits). Nudge them to complete it.">Awaiting bank verification</span><% } %>
             <% if (r.awaiting_auth) { %><span class="badge failed" title="Plan created but no payment method on file">Awaiting authorization</span><% } %>

@@ -47,6 +47,7 @@ async function getRoster({ year, search = '' }) {
         ISNULL(pctc.unendorsed_amount, 0)                             AS unendorsed_pctc_amount,
         CASE WHEN pf_failed.family_id IS NOT NULL THEN 1 ELSE 0 END   AS has_failed_payment,
         CASE WHEN pf_pending.family_id IS NOT NULL THEN 1 ELSE 0 END  AS awaiting_bank_verification,
+        CASE WHEN f.payment_processing_at IS NOT NULL THEN 1 ELSE 0 END AS payment_processing,
         f.plan_awaiting_auth                                          AS awaiting_auth,
         CASE WHEN c.earliest_due IS NOT NULL
                   AND c.earliest_due < CAST(SYSUTCDATETIME() AS DATE)

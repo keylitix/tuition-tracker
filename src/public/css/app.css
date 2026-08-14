@@ -87,6 +87,7 @@ tr.voided td { color: var(--muted); text-decoration: line-through; }
 .badge.past-due { background: var(--danger-bg); color: var(--danger); }
 .badge.pctc { background: var(--warn-bg); color: var(--warn); }
 .badge.failed { background: var(--danger-bg); color: var(--danger); }
+.badge.processing { background: #e8f0fb; color: var(--brand-dark); }
 
 .money.negative { color: var(--danger); }
 .money.owed { color: var(--danger); font-weight: 700; }

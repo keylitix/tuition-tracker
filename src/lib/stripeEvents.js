@@ -147,6 +147,7 @@ async function handleInvoicePaid(run, invoice, ctx, deferred, stripeClient) {
   await run(`UPDATE payment_failures SET cleared = 1 WHERE family_id = @fid AND cleared = 0;`, {
     fid: { type: sql.Int, value: family.id },
   });
+  await clearProcessing(run, family.id); // the ACH draft cleared — no longer in flight
   // A successful draft proves a payment method is attached (spec §7.4).
   await run(`UPDATE families SET plan_awaiting_auth = 0 WHERE id = @fid AND plan_awaiting_auth = 1;`, {
     fid: { type: sql.Int, value: family.id },
@@ -170,6 +171,7 @@ async function handleInvoicePaymentFailed(run, invoice, ctx, deferred, stripeCli
       kind: { type: sql.NVarChar(20), value: kind },
     }
   );
+  if (family) await clearProcessing(run, family.id); // it resolved (as a failure) — no longer in flight
   if (!family) {
     deferred.warnings.push({ ...ctx, message: `invoice.payment_failed for unmatched customer ${invoice.customer}.`, payload: invoice });
   }
@@ -303,6 +305,31 @@ async function handlePaymentIntentSucceeded(run, pi, ctx, deferred) {
     if (err.number === 2627 || err.number === 2601) return; // already recorded
     throw err;
   }
+  await clearProcessing(run, family.id); // the ACH debit settled — no longer in flight
+}
+
+// An ACH payment was submitted and is clearing (takes a few business days). Flag
+// the family so the office can see money is on the way, even though it hasn't
+// settled yet. Cleared when the payment settles (invoice.paid /
+// payment_intent.succeeded) or fails. Applies to both one-time balance payments
+// and the first draft of a new subscription (whose PI carries no metadata, so we
+// resolve the family by customer).
+async function handlePaymentIntentProcessing(run, pi, ctx, deferred, stripeClient) {
+  let family = null;
+  const metaFamily = parseInt((pi.metadata && pi.metadata.family_id) || '', 10);
+  if (Number.isInteger(metaFamily)) family = await findFamilyById(run, metaFamily);
+  if (!family) family = await resolveFamily(run, stripeClient, pi.customer);
+  if (!family) return; // unmatched — no ledger record yet; nothing to flag
+  await run(`UPDATE families SET payment_processing_at = SYSUTCDATETIME() WHERE id = @fid;`, {
+    fid: { type: sql.Int, value: family.id },
+  });
+}
+
+// Clear the "payment processing" flag once a payment settles or fails.
+async function clearProcessing(run, familyId) {
+  await run(`UPDATE families SET payment_processing_at = NULL WHERE id = @fid AND payment_processing_at IS NOT NULL;`, {
+    fid: { type: sql.Int, value: familyId },
+  });
 }
 
 // Dispatch table.
@@ -312,6 +339,7 @@ const HANDLERS = {
   'charge.refunded': handleChargeRefunded,
   'checkout.session.completed': handleCheckoutCompleted,
   'payment_intent.succeeded': handlePaymentIntentSucceeded,
+  'payment_intent.processing': handlePaymentIntentProcessing,
 };
 
 // Entry point. Claim + handle in one transaction; log warnings after commit.
