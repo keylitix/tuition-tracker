@@ -31,6 +31,9 @@ const stripe = new Stripe(KEY);
 const DAY = 24 * 60 * 60;
 const AUG_14_2026 = Math.floor(Date.UTC(2026, 7, 14, 12, 0, 0) / 1000);
 const JAN_15_2027 = Math.floor(Date.UTC(2027, 0, 15, 12, 0, 0) / 1000);
+// One full interval after the Jan-15 draft, so it bills the WHOLE period (not a
+// prorated stub) and then cancels before a second draft. Feb 15 = period end.
+const CANCEL_AT = Math.floor(Date.UTC(2027, 1, 15, 12, 0, 0) / 1000);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -44,16 +47,32 @@ async function waitForClock(clockId) {
   throw new Error('Test clock did not become ready in time');
 }
 
+// Stripe only lets you advance a clock up to 2× the shortest subscription
+// interval per call (2 months when a monthly sub is present), so step there in
+// <=50-day hops until we reach the target.
 async function advanceTo(clockId, unix) {
-  await stripe.testHelpers.testClocks.advance({ frozen_time: unix }, { idempotencyKey: undefined });
-  return waitForClock(clockId);
+  let cur = (await stripe.testHelpers.testClocks.retrieve(clockId)).frozen_time;
+  while (cur < unix) {
+    cur = Math.min(unix, cur + 50 * DAY);
+    await stripe.testHelpers.testClocks.advance(clockId, { frozen_time: cur });
+    await waitForClock(clockId);
+  }
+  return stripe.testHelpers.testClocks.retrieve(clockId);
 }
 
-// Sum of paid invoices for a customer, and the date of each, for assertions.
+async function newClock() {
+  return stripe.testHelpers.testClocks.create({ frozen_time: AUG_14_2026, name: 'semester-dry-run' });
+}
+async function delClock(clockId) {
+  try { await stripe.testHelpers.testClocks.del(clockId); } catch (_) { /* ignore */ }
+}
+
+// Real (non-zero) paid invoices for a customer, oldest first. Excludes the $0
+// trial-start invoice Stripe auto-creates.
 async function paidInvoices(customerId) {
   const inv = await stripe.invoices.list({ customer: customerId, limit: 100 });
   return inv.data
-    .filter((i) => i.status === 'paid' || i.amount_paid > 0)
+    .filter((i) => i.amount_paid > 0)
     .map((i) => ({ amount: i.amount_paid, created: i.created, id: i.id }))
     .sort((a, b) => a.created - b.created);
 }
@@ -74,15 +93,18 @@ async function newCustomerOnClock(clockId, label) {
 }
 
 // A) Parent-style: trial-until-Jan-15 subscription for the 2nd payment.
-async function testParentTrialLeg(clockId) {
+async function testParentTrialLeg() {
   console.log('\n=== A) Parent trial-until-Jan-15 subscription ===');
+  const clock = await newClock();
+  const clockId = clock.id;
+  try {
   const { customer, pm } = await newCustomerOnClock(clockId, 'parent');
   const product = await stripe.products.create({ name: 'Test — semester 2nd payment' });
   const sub = await stripe.subscriptions.create({
     customer: customer.id,
     items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: 463500, recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }],
     trial_end: JAN_15_2027,
-    cancel_at: JAN_15_2027 + 3 * DAY,
+    cancel_at: CANCEL_AT,
     proration_behavior: 'none',
     default_payment_method: pm.id,
   });
@@ -91,67 +113,72 @@ async function testParentTrialLeg(clockId) {
   await advanceTo(clockId, JAN_15_2027 + DAY);
   await sleep(3000); // let invoice finalize/charge settle in test mode
   let paid = await paidInvoices(customer.id);
-  console.log(`  after Jan 15: ${paid.length} paid invoice(s): ${paid.map((p) => fmt(p.amount) + '@' + fmtDate(p.created)).join(', ')}`);
+  console.log(`  after Jan 15: ${paid.length} charge(s): ${paid.map((p) => fmt(p.amount) + '@' + fmtDate(p.created)).join(', ')} (expect one $4635.00)`);
 
-  await advanceTo(clockId, JAN_15_2027 + 45 * DAY);
+  await advanceTo(clockId, JAN_15_2027 + 90 * DAY);
   await sleep(2000);
   paid = await paidInvoices(customer.id);
   const after = await stripe.subscriptions.retrieve(sub.id);
-  console.log(`  +45 days: ${paid.length} paid invoice(s) total; sub status=${after.status} (expect canceled)`);
+  console.log(`  +90 days: ${paid.length} charge(s) total; sub status=${after.status} (expect canceled, no 2nd charge)`);
 
   const ok = paid.length === 1 && paid[0].amount === 463500 && after.status === 'canceled';
   console.log(`  RESULT: ${ok ? 'PASS ✓ one Jan-15 draft, then cancels' : 'FAIL ✗'}`);
   return ok;
+  } finally { await delClock(clockId); }
 }
 
-// B) Office-style: subscription schedule with two yearly phases (now + Jan 15).
-async function testOfficeSchedule(clockId) {
-  console.log('\n=== B) Office subscription schedule (now + Jan 15) ===');
-  const { customer } = await newCustomerOnClock(clockId, 'office');
+// B) Office-style: one-time invoice NOW + trial-until-Jan-15 subscription for the
+// second payment (a mid-period phase boundary does NOT bill, so the schedule
+// approach can't place a charge on Jan 15 — the trial mechanism can).
+async function testOfficeSchedule() {
+  console.log('\n=== B) Office semester: invoice now + Jan-15 trial sub ===');
+  const clock = await newClock();
+  const clockId = clock.id;
+  try {
+  const { customer, pm } = await newCustomerOnClock(clockId, 'office');
   const product = await stripe.products.create({ name: 'Test — office semester' });
-  const recurring = { interval: 'year', interval_count: 1 };
-  const priceItem = (cents) => ({ items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: cents, recurring }, quantity: 1 }] });
-  const schedule = await stripe.subscriptionSchedules.create({
+
+  // Payment 1 — one-off invoice, charged now.
+  const invoice = await stripe.invoices.create({ customer: customer.id, collection_method: 'charge_automatically', auto_advance: true });
+  await stripe.invoiceItems.create({ customer: customer.id, invoice: invoice.id, amount: 350000, currency: 'usd', description: 'Semester payment 1' });
+  await stripe.invoices.finalizeInvoice(invoice.id);
+
+  // Payment 2 — trial until Jan 15, full charge then cancel at period end.
+  const sub = await stripe.subscriptions.create({
     customer: customer.id,
-    start_date: 'now',
-    end_behavior: 'cancel',
-    phases: [
-      { ...priceItem(350000), end_date: JAN_15_2027, proration_behavior: 'none' },
-      { ...priceItem(350000), iterations: 1, proration_behavior: 'none' },
-    ],
+    items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: 350000, recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }],
+    trial_end: JAN_15_2027,
+    cancel_at: CANCEL_AT,
+    proration_behavior: 'none',
+    default_payment_method: pm.id,
   });
-  console.log(`  created schedule ${schedule.id} status=${schedule.status}`);
+  console.log(`  invoice ${invoice.id} (now) + sub ${sub.id} status=${sub.status}`);
   await sleep(3000);
   let paid = await paidInvoices(customer.id);
-  console.log(`  at start: ${paid.length} paid invoice(s): ${paid.map((p) => fmt(p.amount) + '@' + fmtDate(p.created)).join(', ')} (expect 1 now)`);
+  console.log(`  at start: ${paid.length} charge(s): ${paid.map((p) => fmt(p.amount) + '@' + fmtDate(p.created)).join(', ')} (expect 1 now)`);
 
   await advanceTo(clockId, JAN_15_2027 + DAY);
   await sleep(3000);
   paid = await paidInvoices(customer.id);
-  console.log(`  after Jan 15: ${paid.length} paid invoice(s): ${paid.map((p) => fmt(p.amount) + '@' + fmtDate(p.created)).join(', ')} (expect 2)`);
+  console.log(`  after Jan 15: ${paid.length} charge(s): ${paid.map((p) => fmt(p.amount) + '@' + fmtDate(p.created)).join(', ')} (expect 2)`);
 
-  await advanceTo(clockId, JAN_15_2027 + 45 * DAY);
+  await advanceTo(clockId, JAN_15_2027 + 90 * DAY);
   await sleep(2000);
   paid = await paidInvoices(customer.id);
-  const sched = await stripe.subscriptionSchedules.retrieve(schedule.id);
-  console.log(`  +45 days: ${paid.length} paid invoice(s) total; schedule status=${sched.status} (expect completed/canceled)`);
+  const after = await stripe.subscriptions.retrieve(sub.id);
+  console.log(`  +90 days: ${paid.length} charge(s) total; sub status=${after.status} (expect canceled)`);
 
-  const ok = paid.length === 2 && paid.every((p) => p.amount === 350000) && ['canceled', 'completed', 'released'].includes(sched.status);
+  const ok = paid.length === 2 && paid.every((p) => p.amount === 350000) && after.status === 'canceled';
   console.log(`  RESULT: ${ok ? 'PASS ✓ charge now + Jan 15, then stops' : 'FAIL ✗'}`);
   return ok;
+  } finally { await delClock(clockId); }
 }
 
 (async () => {
-  console.log('Creating test clock frozen at', fmtDate(AUG_14_2026), '...');
-  const clock = await stripe.testHelpers.testClocks.create({ frozen_time: AUG_14_2026, name: 'semester-dry-run' });
-  let a = false; let b = false;
-  try {
-    a = await testParentTrialLeg(clock.id);
-    b = await testOfficeSchedule(clock.id);
-  } finally {
-    // Tidy up — deleting the clock removes every object created under it.
-    try { await stripe.testHelpers.testClocks.del(clock.id); console.log('\nDeleted test clock (all test objects removed).'); } catch (e) { console.log('\n(Leave test clock', clock.id, 'to inspect in the dashboard.)'); }
-  }
+  console.log('Semester Jan-15 dry run — clocks frozen at', fmtDate(AUG_14_2026));
+  const a = await testParentTrialLeg();
+  const b = await testOfficeSchedule();
   console.log(`\nOVERALL: parent leg ${a ? 'PASS' : 'FAIL'}, office schedule ${b ? 'PASS' : 'FAIL'}`);
+  console.log('(All test objects were deleted with their clocks.)');
   process.exit(a && b ? 0 : 1);
 })().catch((e) => { console.error('ERROR:', e.message); process.exit(1); });

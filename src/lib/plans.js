@@ -194,48 +194,66 @@ async function createPlan({ stripe, customerId, familyId, schoolYear, plan, bala
     return { invoiceId: invoice.id, subscriptionId: null, awaitingAuth: !hasMethod, computed };
   }
 
-  // monthly / semester: a subscription SCHEDULE, date-anchored to the school year
-  // (the SAME rules parents see in the portal, minus the card fee — office plans
-  // draft whatever method is on file). Schedule phase price_data requires an
-  // existing Product id (it rejects inline product_data), so create one first.
+  // monthly / semester, date-anchored to the school year (the SAME rules parents
+  // see in the portal, minus the card fee — office plans draft whatever method is
+  // on file). price_data requires an existing Product id (it rejects inline
+  // product_data), so create one first.
   const computed = computeParentPlan(balanceDollars, plan, { now: new Date(), schoolYear, method: 'bank' });
   const product = await stripe.products.create(
     { name: `Tuition ${schoolYear}` },
     { idempotencyKey: `${idemKey}-product` }
   );
 
-  let phases;
   if (plan === 'semester') {
-    // Two equal payments: one now, one on Jan 15. A yearly interval makes each
-    // phase bill exactly once (at its start); the phase boundary places the
-    // second charge on Jan 15 (or ~2 days out if Jan 15 is already past).
-    const recurring = { interval: 'year', interval_count: 1 };
-    const priceItem = (cents) => ({
-      items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: cents, recurring }, quantity: 1 }],
-    });
-    const secondUnix = Math.max(
+    // Two equal payments: one NOW (a one-off invoice) and one on JAN 15 (a
+    // trial-until-Jan-15 subscription that draws the full amount, then cancels at
+    // period end). A subscription-schedule phase boundary does NOT bill mid-period,
+    // so this trial mechanism is what actually places the Jan-15 charge — verified
+    // with a Stripe Test Clock (scripts/testclock-semester.js).
+    const invoice = await stripe.invoices.create(
+      { customer: customerId, collection_method: 'charge_automatically', auto_advance: true, metadata: { family_id: String(familyId), school_year: schoolYear, plan } },
+      { idempotencyKey: `${idemKey}-sem1-invoice` }
+    );
+    await stripe.invoiceItems.create(
+      { customer: customerId, invoice: invoice.id, amount: computed.tuitionCents[0], currency: 'usd', description: `Tuition ${schoolYear} — first semester payment` },
+      { idempotencyKey: `${idemKey}-sem1-item` }
+    );
+    await stripe.invoices.finalizeInvoice(invoice.id, {}, { idempotencyKey: `${idemKey}-sem1-finalize` });
+
+    const trialEnd = Math.max(
       Math.floor(computed.secondChargeDate.getTime() / 1000),
       Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60
     );
-    phases = [
-      { ...priceItem(computed.tuitionCents[0]), end_date: secondUnix, proration_behavior: 'none' },
-      { ...priceItem(computed.tuitionCents[1]), iterations: 1, proration_behavior: 'none' },
-    ];
+    const cancelAt = Math.floor(addUTCMonths(new Date(trialEnd * 1000), 1).getTime() / 1000);
+    const sub = await stripe.subscriptions.create(
+      {
+        customer: customerId,
+        items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: computed.tuitionCents[1], recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }],
+        trial_end: trialEnd,
+        cancel_at: cancelAt,
+        proration_behavior: 'none',
+        collection_method: 'charge_automatically',
+        metadata: { family_id: String(familyId), school_year: schoolYear, plan },
+      },
+      { idempotencyKey: `${idemKey}-sem2-sub` }
+    );
+    return { subscriptionId: sub.id, invoiceId: invoice.id, awaitingAuth: !hasMethod, computed };
+  }
+
+  // monthly: a subscription SCHEDULE — N drafts (first now), last on/before May 1;
+  // even split with the remainder on the final cycle. Monthly-interval phases bill
+  // each cycle, which is exactly what we want here.
+  const recurring = { interval: 'month', interval_count: 1 };
+  const priceItem = (cents) => ({
+    items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: cents, recurring }, quantity: 1 }],
+  });
+  const amounts = computed.tuitionCents;
+  const phases = [];
+  if (new Set(amounts).size === 1) {
+    phases.push({ ...priceItem(amounts[0]), iterations: computed.cycles });
   } else {
-    // monthly: N drafts (first now), last on/before May 1; even split, remainder
-    // rides on the final cycle.
-    const recurring = { interval: 'month', interval_count: 1 };
-    const priceItem = (cents) => ({
-      items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: cents, recurring }, quantity: 1 }],
-    });
-    const amounts = computed.tuitionCents;
-    phases = [];
-    if (new Set(amounts).size === 1) {
-      phases.push({ ...priceItem(amounts[0]), iterations: computed.cycles });
-    } else {
-      phases.push({ ...priceItem(amounts[0]), iterations: computed.cycles - 1 });
-      phases.push({ ...priceItem(amounts[amounts.length - 1]), iterations: 1 });
-    }
+    phases.push({ ...priceItem(amounts[0]), iterations: computed.cycles - 1 });
+    phases.push({ ...priceItem(amounts[amounts.length - 1]), iterations: 1 });
   }
 
   const schedule = await stripe.subscriptionSchedules.create(

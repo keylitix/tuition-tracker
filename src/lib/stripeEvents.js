@@ -321,6 +321,10 @@ function scheduleSemesterSecondLeg(deferred, stripeClient, session, family, md) 
     }
     const soon = Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60;
     const trialEnd = Math.max(jan15, soon);
+    // Cancel at the PERIOD END (one interval after the Jan-15 draft) so that draft
+    // bills the whole period — cancelling sooner prorates it down to a stub.
+    // Verified with a Stripe Test Clock (scripts/testclock-semester.js).
+    const cancelAt = addMonthsUnix(trialEnd, 1);
     const product = await stripeClient.products.create(
       { name: `Tuition — second semester payment (${md.school_year})` },
       { idempotencyKey: `sem2-product-${family.id}-${md.school_year}` }
@@ -330,7 +334,7 @@ function scheduleSemesterSecondLeg(deferred, stripeClient, session, family, md) 
         customer: customerId,
         items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: amountCents, recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }],
         trial_end: trialEnd,
-        cancel_at: trialEnd + 3 * 24 * 60 * 60,
+        cancel_at: cancelAt,
         proration_behavior: 'none',
         collection_method: 'charge_automatically',
         ...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
