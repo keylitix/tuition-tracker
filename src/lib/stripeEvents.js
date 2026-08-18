@@ -12,6 +12,7 @@
 
 const { sql, query, withTransaction } = require('../db/pool');
 const { currentSchoolYear, isValidSchoolYear } = require('./schoolYear');
+const { CONVENIENCE_FEE_RATE } = require('./plans');
 
 // Logged OUTSIDE any event transaction (so the log survives a rollback).
 async function logWebhookError({ eventId, eventType, message, payload }) {
@@ -118,7 +119,13 @@ async function handleInvoicePaid(run, invoice, ctx, deferred, stripeClient) {
     return;
   }
   const method = await detectMethod(stripeClient, invoice);
-  const amount = (invoice.amount_paid || 0) / 100;
+  // Card drafts include the 3% convenience fee; credit ONLY the tuition portion
+  // so the fee never shows up as a tuition overpayment. (ACH carries no fee.)
+  const paidCents = invoice.amount_paid || 0;
+  const tuitionCents = method === 'card'
+    ? Math.round(paidCents / (1 + CONVENIENCE_FEE_RATE))
+    : paidCents;
+  const amount = tuitionCents / 100;
   const schoolYear = pickSchoolYear(invoice.metadata);
 
   try {
@@ -247,8 +254,10 @@ async function handleCheckoutCompleted(run, session, ctx, deferred, stripeClient
     });
   }
 
+  const md = session.metadata || {};
+
   if (session.mode === 'subscription' && session.subscription) {
-    const plan = (session.metadata && session.metadata.plan) || 'monthly';
+    const plan = md.plan || 'monthly';
     await run(
       `UPDATE families SET payment_plan = @plan, stripe_subscription_id = @sub,
               plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0
@@ -261,8 +270,8 @@ async function handleCheckoutCompleted(run, session, ctx, deferred, stripeClient
     );
     // Stop the subscription after the right number of cycles (post-commit so the
     // DB transaction doesn't wait on a Stripe API call).
-    const cycles = parseInt((session.metadata && session.metadata.cycles) || '0', 10);
-    const intervalMonths = parseInt((session.metadata && session.metadata.interval_months) || '1', 10);
+    const cycles = parseInt(md.cycles || '0', 10);
+    const intervalMonths = parseInt(md.interval_months || '1', 10);
     if (stripeClient && cycles > 0) {
       deferred.actions.push(async () => {
         const sub = await stripeClient.subscriptions.retrieve(session.subscription);
@@ -274,7 +283,67 @@ async function handleCheckoutCompleted(run, session, ctx, deferred, stripeClient
         }
       });
     }
+    return;
   }
+
+  // Semester (one-time "pay now" leg). Record the plan, then set up the SECOND
+  // payment to draft on Jan 15 as its own subscription that trials until then and
+  // cancels right after — using the payment method saved during this checkout.
+  if (session.mode === 'payment' && md.plan === 'semester') {
+    await run(
+      `UPDATE families SET payment_plan = 'semester', plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0
+        WHERE id = @fid;`,
+      { fid: { type: sql.Int, value: family.id } }
+    );
+    scheduleSemesterSecondLeg(deferred, stripeClient, session, family, md);
+  }
+}
+
+// Post-commit: create the Jan-15 subscription for semester's second payment. Kept
+// out of the DB transaction (Stripe API call). Idempotency-keyed so a webhook
+// retry can't create two. Requires a Product first (subscriptions reject inline
+// product_data). trial_end pauses billing until Jan 15; cancel_at stops it after
+// that single draft. Falls back to ~2 days out if Jan 15 is already past.
+function scheduleSemesterSecondLeg(deferred, stripeClient, session, family, md) {
+  if (!stripeClient) return;
+  const amountCents = parseInt(md.second_tuition_cents || '0', 10) + parseInt(md.second_fee_cents || '0', 10);
+  const jan15 = parseInt(md.jan15 || '0', 10);
+  if (!amountCents || !jan15) return;
+
+  deferred.actions.push(async () => {
+    const customerId = session.customer;
+    if (!customerId) return;
+    // The method saved on the "pay now" PaymentIntent, reused off-session on Jan 15.
+    let paymentMethodId = null;
+    if (session.payment_intent) {
+      const pi = await stripeClient.paymentIntents.retrieve(session.payment_intent);
+      paymentMethodId = pi.payment_method || null;
+    }
+    const soon = Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60;
+    const trialEnd = Math.max(jan15, soon);
+    const product = await stripeClient.products.create(
+      { name: `Tuition — second semester payment (${md.school_year})` },
+      { idempotencyKey: `sem2-product-${family.id}-${md.school_year}` }
+    );
+    const sub = await stripeClient.subscriptions.create(
+      {
+        customer: customerId,
+        items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: amountCents, recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }],
+        trial_end: trialEnd,
+        cancel_at: trialEnd + 3 * 24 * 60 * 60,
+        proration_behavior: 'none',
+        collection_method: 'charge_automatically',
+        ...(paymentMethodId ? { default_payment_method: paymentMethodId } : {}),
+        metadata: { family_id: String(family.id), school_year: md.school_year, plan: 'semester', kind: 'autopay', method: md.method || '' },
+      },
+      { idempotencyKey: `sem2-sub-${family.id}-${md.school_year}` }
+    );
+    // Best-effort link (outside the event transaction).
+    await query(`UPDATE families SET stripe_subscription_id = @sub WHERE id = @fid AND stripe_subscription_id IS NULL;`, {
+      sub: { type: sql.NVarChar(50), value: sub.id },
+      fid: { type: sql.Int, value: family.id },
+    });
+  });
 }
 
 // A PaymentIntent succeeded. We only act on our one-time balance payments
@@ -287,7 +356,13 @@ async function handlePaymentIntentSucceeded(run, pi, ctx, deferred) {
     deferred.warnings.push({ ...ctx, message: `payment_intent.succeeded (balance) with no matching family (${pi.metadata.family_id}).`, payload: pi });
     return;
   }
-  const amount = (pi.amount_received || pi.amount || 0) / 100;
+  // Credit ONLY the tuition portion — the 3% card fee (if any) is not tuition and
+  // must not push the family into a negative balance. tuition_cents is set at
+  // checkout; fall back to the full amount for older payments without it.
+  const tuitionCents = parseInt(pi.metadata.tuition_cents || '', 10);
+  const amount = Number.isInteger(tuitionCents)
+    ? tuitionCents / 100
+    : (pi.amount_received || pi.amount || 0) / 100;
   const schoolYear = pickSchoolYear(pi.metadata);
   try {
     await run(

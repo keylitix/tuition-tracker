@@ -19,18 +19,32 @@
     </div>
   <% } else if (balance.balance > 0) { %>
     <h2 style="font-size:15px;margin:18px 0 8px">How would you like to pay?</h2>
-    <form method="post" action="/portal/checkout" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <form method="post" action="/portal/checkout" id="payform">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <select name="choice" style="width:auto;min-width:280px">
-        <option value="full">Pay in full now — <%= money(balance.balance) %></option>
-        <% if (previews.monthly) { %><option value="monthly">Monthly autopay — 9 payments of <%= money(previews.monthly) %></option><% } %>
-        <% if (previews.semester) { %><option value="semester">Semester autopay — 2 payments of <%= money(previews.semester) %></option><% } %>
-      </select>
-      <button type="submit">Continue to secure payment</button>
+
+      <fieldset class="payopts">
+        <legend>Payment method</legend>
+        <label><input type="radio" name="method" value="bank" checked> Bank account (ACH) — <strong>no fee</strong></label>
+        <label><input type="radio" name="method" value="card"> Credit / debit card — <strong>+<%= feeRatePct %>% convenience fee</strong></label>
+      </fieldset>
+
+      <fieldset class="payopts">
+        <legend>Plan</legend>
+        <label><input type="radio" name="choice" value="full" checked> Pay in full</label>
+        <label><input type="radio" name="choice" value="monthly"> Monthly (through May 1)</label>
+        <label><input type="radio" name="choice" value="semester"> Semester (now + January 15)</label>
+      </fieldset>
+
+      <div id="paysummary" class="paysummary muted"></div>
+
+      <button type="submit" style="margin-top:12px">Continue to secure payment</button>
     </form>
-    <p class="muted" style="margin-top:8px">
-      Payments are handled securely by Stripe by bank draft (ACH). Autopay drafts your bank automatically each cycle; ACH debits take a few business days to clear.
+    <p class="muted" style="margin-top:10px">
+      Payments are handled securely by Stripe. Bank (ACH) drafts are free and take a few business days to clear;
+      card payments add a <%= feeRatePct %>% convenience fee. Plans draft your chosen method automatically each cycle.
     </p>
+    <script id="paydata" type="application/json"><%- JSON.stringify(previews) %></script>
+    <script src="/public/js/portal.js"></script>
   <% } %>
 
   <p class="toolbar" style="margin-top:14px">

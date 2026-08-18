@@ -89,6 +89,14 @@ tr.voided td { color: var(--muted); text-decoration: line-through; }
 .badge.failed { background: var(--danger-bg); color: var(--danger); }
 .badge.processing { background: #e8f0fb; color: var(--brand-dark); }
 
+/* Parent payment picker */
+.payopts { border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px 12px; margin: 12px 0; }
+.payopts legend { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--brand-dark); padding: 0 6px; }
+.payopts label { display: block; font-size: 14px; color: inherit; margin: 8px 0 0; cursor: pointer; }
+.payopts input[type="radio"] { width: auto; margin-right: 8px; vertical-align: middle; }
+.paysummary { background: #e8f0fb; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--brand-dark); min-height: 1px; }
+.paysummary:empty { display: none; }
+
 .money.negative { color: var(--danger); }
 .money.owed { color: var(--danger); font-weight: 700; }
 .money.paidup { color: var(--ok); }

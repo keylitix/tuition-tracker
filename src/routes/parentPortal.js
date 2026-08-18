@@ -15,12 +15,21 @@ const stripe = require('../lib/stripeClient');
 const { currentSchoolYear } = require('../lib/schoolYear');
 const config = require('../config');
 
-// Per-payment amount for each autopay option (null if not applicable).
-function planPreviews(balanceDollars) {
+// Preview each plan for a given method (bank/card): the first payment amount, the
+// number of payments, and the total incl. any card fee. Drives the portal picker.
+function planPreviews(balanceDollars, method, schoolYear) {
+  const now = new Date();
   const out = {};
-  for (const p of ['monthly', 'semester']) {
-    try { out[p] = plans.computePlan(balanceDollars, p).amountsCents[0] / 100; }
-    catch (_) { out[p] = null; }
+  for (const p of ['full', 'monthly', 'semester']) {
+    try {
+      const c = plans.computeParentPlan(balanceDollars, p, { now, schoolYear, method });
+      out[p] = {
+        cycles: c.cycles,
+        firstPayment: (c.tuitionCents[0] + c.feeCents[0]) / 100,
+        feeTotal: c.feeTotalCents / 100,
+        total: c.totalWithFeeCents / 100,
+      };
+    } catch (_) { out[p] = null; }
   }
   return out;
 }
@@ -29,7 +38,8 @@ const router = express.Router();
 
 function portalFlash(query) {
   if (query.paid) return 'Payment started. Bank (ACH) debits take a few business days to clear — it will appear here once it settles.';
-  if (query.autopay) return 'Autopay is set up. Your bank will be drafted automatically each cycle.';
+  if (query.autopay) return 'Autopay is set up. Your payment method will be drafted automatically each cycle.';
+  if (query.semester) return 'First semester payment started. Your second payment will draft automatically on January 15.';
   if (query.canceled) return null; // silent — parent backed out of checkout
   return null;
 }
@@ -43,6 +53,7 @@ router.get('/', async (req, res, next) => {
       q.getPaymentsForFamily(req.familyId),
       q.getFamilyBalance(req.familyId),
     ]);
+    const schoolYear = currentSchoolYear();
     res.render('parent/portal', {
       title: 'Your tuition',
       family,
@@ -53,7 +64,11 @@ router.get('/', async (req, res, next) => {
       hasStripeCustomer: !!family.stripe_customer_id,
       hasPlan: !!family.payment_plan,
       planLabel: family.payment_plan ? (plans.PLAN_SPECS[family.payment_plan] || {}).label || family.payment_plan : null,
-      previews: planPreviews(balance.balance),
+      feeRatePct: Math.round(plans.CONVENIENCE_FEE_RATE * 100),
+      previews: {
+        bank: planPreviews(balance.balance, 'bank', schoolYear),
+        card: planPreviews(balance.balance, 'card', schoolYear),
+      },
       flash: portalFlash(req.query),
       error: req.query.err || null,
     });
@@ -65,7 +80,14 @@ router.get('/', async (req, res, next) => {
 // touches bank details.
 router.post('/checkout', async (req, res, next) => {
   try {
-    const choice = String(req.body.choice || '').trim();
+    const plan = String(req.body.choice || '').trim();       // full | monthly | semester
+    const method = String(req.body.method || 'bank').trim();  // bank | card
+    if (!['full', 'monthly', 'semester'].includes(plan)) {
+      return res.redirect('/portal?err=' + encodeURIComponent('Please choose a payment option.'));
+    }
+    if (!['bank', 'card'].includes(method)) {
+      return res.redirect('/portal?err=' + encodeURIComponent('Please choose how you\'d like to pay.'));
+    }
     const family = await q.getFamily(req.familyId);
     const bal = await q.getFamilyBalance(req.familyId);
     if (bal.balance <= 0) {
@@ -76,17 +98,9 @@ router.post('/checkout', async (req, res, next) => {
     if (block) return res.redirect('/portal?err=' + encodeURIComponent(block));
     let url;
     try {
-      if (choice === 'full') {
-        url = await checkout.createBalanceCheckout(stripe, {
-          family, balanceDollars: bal.balance, schoolYear: currentSchoolYear(),
-        });
-      } else if (choice === 'monthly' || choice === 'semester') {
-        url = await checkout.createAutopayCheckout(stripe, {
-          family, plan: choice, balanceDollars: bal.balance, schoolYear: currentSchoolYear(),
-        });
-      } else {
-        return res.redirect('/portal?err=' + encodeURIComponent('Please choose a payment option.'));
-      }
+      url = await checkout.createCheckout(stripe, {
+        family, balanceDollars: bal.balance, schoolYear: currentSchoolYear(), plan, method,
+      });
     } catch (e) {
       console.error('Checkout failed:', e.message);
       return res.redirect('/portal?err=' + encodeURIComponent('Online payment is temporarily unavailable. Please try again later or contact the office.'));
