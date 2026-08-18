@@ -34,6 +34,19 @@ const JAN_15_2027 = Math.floor(Date.UTC(2027, 0, 15, 12, 0, 0) / 1000);
 // One full interval after the Jan-15 draft, so it bills the WHOLE period (not a
 // prorated stub) and then cancels before a second draft. Feb 15 = period end.
 const CANCEL_AT = Math.floor(Date.UTC(2027, 1, 15, 12, 0, 0) / 1000);
+// Well past the monthly plan's final draft (Apr 14) and its cancel point (May 14),
+// to prove no 10th draft ever fires.
+const JUN_20_2027 = Math.floor(Date.UTC(2027, 5, 20, 12, 0, 0) / 1000);
+
+function addMonthsUnix(unix, months) {
+  const d = new Date(unix * 1000);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + months);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
+  return Math.floor(d.getTime() / 1000);
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -174,11 +187,98 @@ async function testOfficeSchedule() {
   } finally { await delClock(clockId); }
 }
 
+// C) Parent monthly: a subscription that drafts now + monthly, stopped after N
+// cycles by cancel_at (exactly how stripeEvents sets it post-checkout). Enrolling
+// Aug 14 -> 9 drafts (Aug..Apr), last on/before May 1, then cancels (no 10th).
+async function testParentMonthly() {
+  console.log('\n=== C) Parent monthly (first now, last <= May 1) ===');
+  const clock = await newClock();
+  const clockId = clock.id;
+  try {
+    const { customer, pm } = await newCustomerOnClock(clockId, 'parent-monthly');
+    const product = await stripe.products.create({ name: 'Test — monthly' });
+    const sub = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: 100000, recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }],
+      default_payment_method: pm.id,
+      proration_behavior: 'none',
+    });
+    const start = sub.current_period_start;
+    const cancelAt = addMonthsUnix(start, 9); // cycles * interval_months
+    await stripe.subscriptions.update(sub.id, { cancel_at: cancelAt });
+    console.log(`  sub ${sub.id}; first draft now; cancel_at ${fmtDate(cancelAt)}`);
+
+    await advanceTo(clockId, JUN_20_2027);
+    await sleep(3000);
+    const paid = await paidInvoices(customer.id);
+    const after = await stripe.subscriptions.retrieve(sub.id);
+    const total = paid.reduce((s, p) => s + p.amount, 0);
+    const last = paid.length ? paid[paid.length - 1].created : 0;
+    console.log(`  ${paid.length} draft(s), total ${fmt(total)}, last ${fmtDate(last)}; sub status=${after.status}`);
+    console.log(`  dates: ${paid.map((p) => fmtDate(p.created)).join(', ')}`);
+    const ok = paid.length === 9 && total === 900000 && last <= JAN_15_2027 + 90 * DAY && after.status === 'canceled';
+    console.log(`  RESULT: ${ok ? 'PASS ✓ 9 drafts = $9,000, last by May 1, then cancels' : 'FAIL ✗'}`);
+    return ok;
+  } finally { await delClock(clockId); }
+}
+
+// D) Office monthly: the subscription SCHEDULE createPlan builds (N monthly-interval
+// iterations, end_behavior cancel).
+async function testOfficeMonthly() {
+  console.log('\n=== D) Office monthly schedule (N drafts, then cancel) ===');
+  const clock = await newClock();
+  const clockId = clock.id;
+  try {
+    const { customer } = await newCustomerOnClock(clockId, 'office-monthly');
+    const product = await stripe.products.create({ name: 'Test — office monthly' });
+    const schedule = await stripe.subscriptionSchedules.create({
+      customer: customer.id,
+      start_date: 'now',
+      end_behavior: 'cancel',
+      phases: [{ items: [{ price_data: { currency: 'usd', product: product.id, unit_amount: 100000, recurring: { interval: 'month', interval_count: 1 } }, quantity: 1 }], iterations: 9 }],
+    });
+    console.log(`  schedule ${schedule.id} status=${schedule.status}`);
+
+    await advanceTo(clockId, JUN_20_2027);
+    await sleep(3000);
+    const paid = await paidInvoices(customer.id);
+    const sched = await stripe.subscriptionSchedules.retrieve(schedule.id);
+    const total = paid.reduce((s, p) => s + p.amount, 0);
+    console.log(`  ${paid.length} draft(s), total ${fmt(total)}; schedule status=${sched.status}`);
+    const ok = paid.length === 9 && total === 900000 && ['canceled', 'completed', 'released'].includes(sched.status);
+    console.log(`  RESULT: ${ok ? 'PASS ✓ 9 drafts = $9,000, then stops' : 'FAIL ✗'}`);
+    return ok;
+  } finally { await delClock(clockId); }
+}
+
+const SUITE = {
+  semester: async () => {
+    const a = await testParentTrialLeg();
+    const b = await testOfficeSchedule();
+    return { 'parent semester': a, 'office semester': b };
+  },
+  monthly: async () => {
+    const c = await testParentMonthly();
+    const d = await testOfficeMonthly();
+    return { 'parent monthly': c, 'office monthly': d };
+  },
+};
+
 (async () => {
-  console.log('Semester Jan-15 dry run — clocks frozen at', fmtDate(AUG_14_2026));
-  const a = await testParentTrialLeg();
-  const b = await testOfficeSchedule();
-  console.log(`\nOVERALL: parent leg ${a ? 'PASS' : 'FAIL'}, office schedule ${b ? 'PASS' : 'FAIL'}`);
+  const which = (process.argv[2] || 'all').toLowerCase();
+  const groups = which === 'all' ? ['semester', 'monthly'] : [which];
+  console.log(`Dry run [${groups.join(', ')}] — clocks frozen at ${fmtDate(AUG_14_2026)}`);
+  const results = {};
+  for (const g of groups) {
+    if (!SUITE[g]) { console.error(`Unknown suite "${g}" (use: semester | monthly | all)`); process.exit(2); }
+    Object.assign(results, await SUITE[g]());
+  }
+  console.log('\nOVERALL:');
+  let allOk = true;
+  for (const [name, ok] of Object.entries(results)) {
+    console.log(`  ${name}: ${ok ? 'PASS' : 'FAIL'}`);
+    allOk = allOk && ok;
+  }
   console.log('(All test objects were deleted with their clocks.)');
-  process.exit(a && b ? 0 : 1);
+  process.exit(allOk ? 0 : 1);
 })().catch((e) => { console.error('ERROR:', e.message); process.exit(1); });
