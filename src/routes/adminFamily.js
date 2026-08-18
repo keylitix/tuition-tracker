@@ -14,11 +14,20 @@ const config = require('../config');
 const router = express.Router();
 
 // Preview per-cycle amounts for each plan at a given balance (null if not billable).
-function planPreviews(balanceDollars) {
+// Monthly/semester mirror the date-anchored rules createPlan actually uses (May 1 /
+// Jan 15), so the dropdown shows the real cycle count. Office plans carry no fee.
+function planPreviews(balanceDollars, schoolYear) {
+  const now = new Date();
   const out = {};
   for (const plan of Object.keys(plans.PLAN_SPECS)) {
     try {
-      out[plan] = plans.computePlan(balanceDollars, plan);
+      if (plan === 'annual') {
+        const c = plans.computePlan(balanceDollars, 'annual');
+        out[plan] = { cycles: 1, amountsCents: c.amountsCents };
+      } else {
+        const c = plans.computeParentPlan(balanceDollars, plan, { now, schoolYear, method: 'bank' });
+        out[plan] = { cycles: c.cycles, amountsCents: c.tuitionCents };
+      }
     } catch (_) {
       out[plan] = null; // balance <= 0
     }
@@ -140,7 +149,7 @@ router.get('/:id', loadFamily, async (req, res, next) => {
       planSpecs: plans.PLAN_SPECS,
       planYear,
       planBalance: planBalance.balance,
-      planPreviews: planPreviews(planBalance.balance),
+      planPreviews: planPreviews(planBalance.balance, planYear),
       customerPortalUrl: config.stripe.customerPortalUrl,
       stripePortalBase: config.stripe.customerPortalUrl,
       ...vm,
