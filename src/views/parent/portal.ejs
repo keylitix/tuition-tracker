@@ -33,17 +33,26 @@
         <label><input type="radio" name="choice" value="full" checked> Pay in full</label>
         <label><input type="radio" name="choice" value="monthly"> Monthly (through May 1)</label>
         <label><input type="radio" name="choice" value="semester"> Semester (now + January 15)</label>
+        <% if (custom) { %>
+          <label><input type="radio" name="choice" value="other"> Other amount</label>
+          <div id="otherwrap" class="otheramt" hidden>
+            <label for="payamount" style="margin:2px 0 4px">Amount to pay (max <%= money(custom.balanceDollars) %>)</label>
+            <input type="number" id="payamount" name="amount" step="0.01" inputmode="decimal"
+                   min="<%= custom.minDollars.toFixed(2) %>" max="<%= custom.balanceDollars.toFixed(2) %>"
+                   value="<%= custom.defaultDollars.toFixed(2) %>">
+          </div>
+        <% } %>
       </fieldset>
 
       <div id="paysummary" class="paysummary muted"></div>
 
-      <button type="submit" style="margin-top:12px">Continue to secure payment</button>
+      <button type="submit" id="paysubmit" style="margin-top:12px">Continue to secure payment</button>
     </form>
     <p class="muted" style="margin-top:10px">
       Payments are handled securely by Stripe. Bank (ACH) drafts are free and take a few business days to clear;
       card payments add a <%= feeRatePct %>% convenience fee. Plans draft your chosen method automatically each cycle.
     </p>
-    <script id="paydata" type="application/json"><%- JSON.stringify(previews) %></script>
+    <script id="paydata" type="application/json"><%- JSON.stringify({ previews: previews, custom: custom, feeRatePct: feeRatePct }) %></script>
     <script src="/public/js/portal.js"></script>
   <% } %>
 

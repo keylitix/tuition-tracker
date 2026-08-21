@@ -12,7 +12,7 @@
 //   - semester: pay now, then again on Jan 15 (the 2nd leg is a trial-until-Jan-15
 //               subscription created post-checkout in stripeEvents).
 
-const { computeParentPlan } = require('./plans');
+const { computeParentPlan, CONVENIENCE_FEE_RATE } = require('./plans');
 const config = require('../config');
 
 const METHOD_TYPES = { bank: ['us_bank_account'], card: ['card'] };
@@ -58,6 +58,41 @@ async function createBalanceCheckout(stripe, { family, balanceDollars, schoolYea
     price_data: {
       currency: 'usd',
       product_data: { name: `Tuition balance — ${schoolYear}` },
+      unit_amount: tuitionCents,
+    },
+    quantity: 1,
+  }];
+  if (feeCents > 0) line_items.push(feeLine(feeCents));
+
+  const session = await stripe.checkout.sessions.create({
+    mode: 'payment',
+    payment_method_types: methodTypes(method),
+    ...customerFields(family, 'payment'),
+    line_items,
+    payment_intent_data: { metadata },
+    metadata,
+    success_url: `${config.baseUrl}/portal?paid=1`,
+    cancel_url: `${config.baseUrl}/portal?canceled=1`,
+  });
+  return session.url;
+}
+
+// One-time payment of a parent-entered custom amount toward the balance (+3% if
+// card). The caller (route) is responsible for validating the amount against the
+// date-based policy (customPaymentPolicy) BEFORE calling this.
+async function createCustomCheckout(stripe, { family, amountDollars, schoolYear, method }) {
+  const tuitionCents = Math.round(Number(amountDollars) * 100);
+  if (!Number.isFinite(tuitionCents) || tuitionCents <= 0) throw new Error('Enter an amount to pay.');
+  const feeCents = method === 'card' ? Math.round(tuitionCents * CONVENIENCE_FEE_RATE) : 0;
+  const metadata = {
+    family_id: String(family.id), school_year: schoolYear, kind: 'balance',
+    method, tuition_cents: String(tuitionCents), fee_cents: String(feeCents),
+  };
+
+  const line_items = [{
+    price_data: {
+      currency: 'usd',
+      product_data: { name: `Tuition payment — ${schoolYear}` },
       unit_amount: tuitionCents,
     },
     quantity: 1,
@@ -168,10 +203,11 @@ async function createSemesterCheckout(stripe, { family, balanceDollars, schoolYe
 }
 
 // Dispatch by plan choice.
-async function createCheckout(stripe, { family, balanceDollars, schoolYear, plan, method }) {
+async function createCheckout(stripe, { family, balanceDollars, schoolYear, plan, method, amountDollars }) {
   if (plan === 'full') return createBalanceCheckout(stripe, { family, balanceDollars, schoolYear, method });
   if (plan === 'monthly') return createMonthlyCheckout(stripe, { family, balanceDollars, schoolYear, method });
   if (plan === 'semester') return createSemesterCheckout(stripe, { family, balanceDollars, schoolYear, method });
+  if (plan === 'other') return createCustomCheckout(stripe, { family, amountDollars, schoolYear, method });
   throw new Error('Please choose a payment option.');
 }
 
@@ -213,5 +249,5 @@ async function createBillingPortal(stripe, family) {
 
 module.exports = {
   createCheckout, createBalanceCheckout, createMonthlyCheckout, createSemesterCheckout,
-  createBillingPortal, existingPaymentBlock,
+  createCustomCheckout, createBillingPortal, existingPaymentBlock,
 };

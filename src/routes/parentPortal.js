@@ -9,11 +9,28 @@
 const express = require('express');
 const q = require('../lib/queries');
 const { streamStatement } = require('../lib/pdf');
+const { normalizeAmount } = require('../lib/money');
 const checkout = require('../lib/checkout');
 const plans = require('../lib/plans');
 const stripe = require('../lib/stripeClient');
 const { currentSchoolYear } = require('../lib/schoolYear');
 const config = require('../config');
+
+// Date-based rules for the "Other amount" option, in dollars for the view.
+function customPolicyView(balance, schoolYear) {
+  try {
+    const p = plans.customPaymentPolicy(balance.balance, balance.charged, balance.paid, { now: new Date(), schoolYear });
+    return {
+      minDollars: p.minCents / 100,
+      defaultDollars: p.defaultCents / 100,
+      balanceDollars: p.balanceCents / 100,
+      remainingHalfDollars: p.remainingHalfCents / 100,
+      halfDollars: p.halfCents / 100,
+      afterJan15: p.afterJan15,
+      afterMay1: p.afterMay1,
+    };
+  } catch (_) { return null; }
+}
 
 // Preview each plan for a given method (bank/card): the first payment amount, the
 // number of payments, and the total incl. any card fee. Drives the portal picker.
@@ -69,6 +86,7 @@ router.get('/', async (req, res, next) => {
         bank: planPreviews(balance.balance, 'bank', schoolYear),
         card: planPreviews(balance.balance, 'card', schoolYear),
       },
+      custom: customPolicyView(balance, schoolYear),
       flash: portalFlash(req.query),
       error: req.query.err || null,
     });
@@ -80,9 +98,9 @@ router.get('/', async (req, res, next) => {
 // touches bank details.
 router.post('/checkout', async (req, res, next) => {
   try {
-    const plan = String(req.body.choice || '').trim();       // full | monthly | semester
+    const plan = String(req.body.choice || '').trim();       // full | monthly | semester | other
     const method = String(req.body.method || 'bank').trim();  // bank | card
-    if (!['full', 'monthly', 'semester'].includes(plan)) {
+    if (!['full', 'monthly', 'semester', 'other'].includes(plan)) {
       return res.redirect('/portal?err=' + encodeURIComponent('Please choose a payment option.'));
     }
     if (!['bank', 'card'].includes(method)) {
@@ -93,13 +111,36 @@ router.post('/checkout', async (req, res, next) => {
     if (bal.balance <= 0) {
       return res.redirect('/portal?err=' + encodeURIComponent('Your balance is already paid in full.'));
     }
+
+    // "Other amount": validate the entered amount against the date-based floor
+    // (at least the remaining half in January, the full balance on/after May 1).
+    let amountDollars = null;
+    if (plan === 'other') {
+      const schoolYear = currentSchoolYear();
+      const policy = plans.customPaymentPolicy(bal.balance, bal.charged, bal.paid, { now: new Date(), schoolYear });
+      amountDollars = normalizeAmount(req.body.amount);
+      const cents = Math.round(Number(amountDollars) * 100);
+      if (!Number.isFinite(cents) || cents <= 0) {
+        return res.redirect('/portal?err=' + encodeURIComponent('Enter a valid amount to pay.'));
+      }
+      if (cents > policy.balanceCents) {
+        return res.redirect('/portal?err=' + encodeURIComponent(`That's more than your balance of $${(policy.balanceCents / 100).toFixed(2)}.`));
+      }
+      if (cents < policy.minCents) {
+        const msg = policy.afterMay1
+          ? `Your full balance of $${(policy.balanceCents / 100).toFixed(2)} is now due — please pay it in full.`
+          : `At least $${(policy.minCents / 100).toFixed(2)} is due by January 15. Please enter that amount or more.`;
+        return res.redirect('/portal?err=' + encodeURIComponent(msg));
+      }
+    }
+
     // Don't let a parent pay twice — block if a plan or payment is already in flight.
     const block = await checkout.existingPaymentBlock(stripe, family);
     if (block) return res.redirect('/portal?err=' + encodeURIComponent(block));
     let url;
     try {
       url = await checkout.createCheckout(stripe, {
-        family, balanceDollars: bal.balance, schoolYear: currentSchoolYear(), plan, method,
+        family, balanceDollars: bal.balance, schoolYear: currentSchoolYear(), plan, method, amountDollars,
       });
     } catch (e) {
       console.error('Checkout failed:', e.message);

@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   computePlan, isValidPlan, PLAN_SPECS,
-  computeParentPlan, monthlyCyclesUntilMay1, jan15Of, may1Of, CONVENIENCE_FEE_RATE,
+  computeParentPlan, customPaymentPolicy, monthlyCyclesUntilMay1, jan15Of, may1Of, CONVENIENCE_FEE_RATE,
 } = require('../src/lib/plans');
 
 function sum(arr) { return arr.reduce((a, b) => a + b, 0); }
@@ -114,4 +114,40 @@ test('parent plan rejects bad method / balance', () => {
   const now = new Date(Date.UTC(2026, 7, 14, 12));
   assert.throws(() => computeParentPlan(1000, 'full', { now, schoolYear: SY, method: 'crypto' }), /Unknown method/);
   assert.throws(() => computeParentPlan(0, 'full', { now, schoolYear: SY, method: 'bank' }), /greater than zero/);
+});
+
+// --- Other amount: date-based minimum floor -------------------------------
+
+test('custom payment: before Jan 15, any amount (>= $1); default = full balance', () => {
+  // $9,000 total, nothing paid, full balance still $9,000, in September.
+  const p = customPaymentPolicy(9000, 9000, 0, { now: new Date(Date.UTC(2026, 8, 1, 12)), schoolYear: SY });
+  assert.strictEqual(p.minCents, 100);           // $1 practical floor
+  assert.strictEqual(p.defaultCents, 900000);    // suggests full
+  assert.strictEqual(p.balanceCents, 900000);
+  assert.strictEqual(p.afterJan15, false);
+});
+
+test('custom payment: in January, floor + default = remaining half', () => {
+  // $9,000 total, $2,000 already paid -> half is $4,500, remaining half $2,500.
+  const p = customPaymentPolicy(7000, 9000, 2000, { now: new Date(Date.UTC(2027, 0, 20, 12)), schoolYear: SY });
+  assert.strictEqual(p.afterJan15, true);
+  assert.strictEqual(p.afterMay1, false);
+  assert.strictEqual(p.remainingHalfCents, 250000);
+  assert.strictEqual(p.minCents, 250000);        // cannot pay less than remaining half
+  assert.strictEqual(p.defaultCents, 250000);    // defaults to it
+});
+
+test('custom payment: in January but half already met -> $1 floor, no block', () => {
+  // Paid $5,000 of $9,000 -> already past the $4,500 half. Balance $4,000.
+  const p = customPaymentPolicy(4000, 9000, 5000, { now: new Date(Date.UTC(2027, 0, 20, 12)), schoolYear: SY });
+  assert.strictEqual(p.remainingHalfCents, 0);
+  assert.strictEqual(p.minCents, 100);           // any amount toward the rest
+  assert.strictEqual(p.defaultCents, 100);
+});
+
+test('custom payment: on/after May 1, full balance required', () => {
+  const p = customPaymentPolicy(4000, 9000, 5000, { now: new Date(Date.UTC(2027, 4, 2, 12)), schoolYear: SY });
+  assert.strictEqual(p.afterMay1, true);
+  assert.strictEqual(p.minCents, 400000);        // must pay the whole $4,000
+  assert.strictEqual(p.defaultCents, 400000);
 });

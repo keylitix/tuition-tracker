@@ -96,6 +96,9 @@ tr.voided td { color: var(--muted); text-decoration: line-through; }
 .payopts input[type="radio"] { width: auto; margin-right: 8px; vertical-align: middle; }
 .paysummary { background: #e8f0fb; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--brand-dark); min-height: 1px; }
 .paysummary:empty { display: none; }
+.otheramt { margin: 6px 0 2px 26px; }
+.otheramt input[type="number"] { width: auto; max-width: 200px; margin: 0; }
+button:disabled { opacity: .5; cursor: not-allowed; }
 
 .money.negative { color: var(--danger); }
 .money.owed { color: var(--danger); font-weight: 700; }

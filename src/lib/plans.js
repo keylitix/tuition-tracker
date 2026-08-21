@@ -82,6 +82,43 @@ function feeCentsFor(tuitionCents, method) {
   return method === 'card' ? Math.round(tuitionCents * CONVENIENCE_FEE_RATE) : 0;
 }
 
+// "Other amount" — a parent-entered custom payment toward the balance. The
+// minimum they may pay depends on the calendar, enforcing the school's schedule:
+//   - before Jan 15: any amount (>= $1).
+//   - Jan 15 .. Apr 30: at least the REMAINING HALF — enough to bring total paid
+//     to 50% of tuition — and the field defaults to exactly that.
+//   - on/after May 1: the FULL remaining balance (tuition must be paid off).
+// "total" is the family's tuition obligation for the year (total charges);
+// "paid" is everything credited so far (cash, ACH, PCTC, etc.).
+function customPaymentPolicy(balanceDollars, totalDollars, paidDollars, { now, schoolYear }) {
+  const balanceCents = Math.round(Number(balanceDollars) * 100);
+  if (!Number.isFinite(balanceCents) || balanceCents <= 0) throw new Error('There is no balance to pay.');
+  const totalCents = Math.round(Number(totalDollars) * 100);
+  const paidCents = Math.round(Number(paidDollars) * 100);
+  const t = new Date(now).getTime();
+  const afterJan15 = t >= jan15Of(schoolYear).getTime();
+  const afterMay1 = t >= may1Of(schoolYear).getTime();
+
+  const halfCents = Math.round(totalCents / 2);
+  const remainingHalfCents = Math.max(0, Math.min(balanceCents, halfCents - paidCents));
+
+  let minCents; let defaultCents;
+  if (afterMay1) {
+    minCents = balanceCents; defaultCents = balanceCents;
+  } else if (afterJan15) {
+    minCents = remainingHalfCents; defaultCents = remainingHalfCents;
+  } else {
+    minCents = 0; defaultCents = balanceCents; // suggest paying in full, but any amount is allowed
+  }
+  // Practical $1 floor (Stripe minimums) when no schedule floor applies.
+  if (minCents <= 0) minCents = Math.min(balanceCents, 100);
+  if (defaultCents < minCents) defaultCents = minCents;
+
+  return {
+    balanceCents, minCents, defaultCents, halfCents, remainingHalfCents, afterJan15, afterMay1,
+  };
+}
+
 // Build a parent plan from the balance + choices. Pure and unit-tested.
 //   plan:   'full' | 'monthly' | 'semester'
 //   method: 'bank' | 'card'
@@ -279,6 +316,6 @@ async function createPlan({ stripe, customerId, familyId, schoolYear, plan, bala
 
 module.exports = {
   PLAN_SPECS, isValidPlan, computePlan, customerHasPaymentMethod, createPlan,
-  CONVENIENCE_FEE_RATE, computeParentPlan, monthlyCyclesUntilMay1, may1Of, jan15Of,
-  springYear, addUTCMonths,
+  CONVENIENCE_FEE_RATE, computeParentPlan, customPaymentPolicy,
+  monthlyCyclesUntilMay1, may1Of, jan15Of, springYear, addUTCMonths,
 };
