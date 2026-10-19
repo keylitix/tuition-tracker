@@ -399,15 +399,32 @@ router.post('/:id/payments/:paymentId/refund', loadFamily, async (req, res, next
     if (!payment.stripe_payment_intent_id || !['ach', 'card'].includes(payment.method)) {
       return res.redirect(back('err=' + encodeURIComponent('Only online bank/card payments can be refunded here. For cash/check/PCTC, record a manual adjustment instead.')));
     }
-    if (Number(payment.amount) <= 0) {
+    const paidCents = Math.round(Number(payment.amount) * 100);
+    if (paidCents <= 0) {
       return res.redirect(back('err=' + encodeURIComponent('That row is not a positive payment.')));
     }
+    // Amount is optional — defaults to the full payment. A smaller value is a
+    // partial refund; it can never exceed the original payment.
+    let amountCents; // undefined => full refund
+    const raw = String(req.body.amount || '').trim();
+    if (raw) {
+      const dollars = normalizeAmount(raw);
+      amountCents = Math.round(Number(dollars) * 100);
+      if (!Number.isFinite(amountCents) || amountCents <= 0) {
+        return res.redirect(back('err=' + encodeURIComponent('Enter a valid refund amount.')));
+      }
+      if (amountCents > paidCents) {
+        return res.redirect(back('err=' + encodeURIComponent(`Refund can't exceed the original payment of $${(paidCents / 100).toFixed(2)}.`)));
+      }
+      if (amountCents === paidCents) amountCents = undefined; // full refund
+    }
     try {
-      await checkout.refundPayment(stripe, payment.stripe_payment_intent_id);
+      await checkout.refundPayment(stripe, payment.stripe_payment_intent_id, amountCents);
     } catch (e) {
       return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
     }
-    res.redirect(back('ok=' + encodeURIComponent(`Refund of $${Number(payment.amount).toFixed(2)} issued. It posts to the ledger once Stripe confirms (ACH refunds take a few business days).`)));
+    const refunded = (amountCents || paidCents) / 100;
+    res.redirect(back('ok=' + encodeURIComponent(`Refund of $${refunded.toFixed(2)} issued. It posts to the ledger once Stripe confirms (ACH refunds take a few business days).`)));
   } catch (err) { next(err); }
 });
 

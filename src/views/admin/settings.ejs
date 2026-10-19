@@ -51,7 +51,7 @@
           <td class="muted"><%= fmtDate(r.updated_at) %></td>
           <td class="num">
             <form class="inline" method="post" action="/admin/settings/tuition/apply-all"
-                  onsubmit="return confirm('Re-price every family to <%= money(r.annual_tuition) %> for <%= r.school_year %>? Existing tuition charges that differ will be voided and re-added at this rate.');">
+                  data-confirm="Re-price every family to <%= money(r.annual_tuition) %> for <%= r.school_year %>? Existing tuition charges that differ will be voided and re-added at this rate.">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
               <input type="hidden" name="school_year" value="<%= r.school_year %>">
               <button class="secondary small" type="submit">Sync all families</button>
@@ -87,7 +87,7 @@
           <td class="num">
             <% if (it.active) { %>
               <form class="inline" method="post" action="/admin/settings/items/<%= it.id %>/deactivate"
-                    onsubmit="return confirm('Remove this optional item from the catalog? Existing charges are unaffected.');">
+                    data-confirm="Remove this optional item from the catalog? Existing charges are unaffected.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button class="secondary small" type="submit">Remove</button>
               </form>
@@ -122,7 +122,7 @@
           <td class="num">
             <% if (a.active && a.id !== currentAdminId) { %>
               <form class="inline" method="post" action="/admin/settings/admins/<%= a.id %>/deactivate"
-                    onsubmit="return confirm('Remove <%= a.email %> as an admin? They will no longer be able to sign in.');">
+                    data-confirm="Remove <%= a.email %> as an admin? They will no longer be able to sign in.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button class="secondary small" type="submit">Remove</button>
               </form>

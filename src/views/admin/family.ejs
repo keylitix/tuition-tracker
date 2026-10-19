@@ -51,7 +51,7 @@
       Created <%= fmtDate(family.plan_created_at) %>.
     </p>
     <form class="inline" method="post" action="/admin/families/<%= family.id %>/cancel-plan"
-          onsubmit="return confirm('Cancel autopay for this family? This immediately stops ALL future automatic drafts in Stripe. Past payments are NOT refunded (refund those from the Payments list below).');">
+          data-confirm="Cancel autopay for this family? This immediately stops ALL future automatic drafts in Stripe. Past payments are NOT refunded (refund those from the Payments list below).">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <button class="secondary small" type="submit">Cancel autopay (stop future drafts)</button>
     </form>
@@ -68,7 +68,7 @@
       — PCTC and other payments are already deducted, so tuition is never double-charged.
     </p>
     <form method="post" action="/admin/families/<%= family.id %>/plan"
-          onsubmit="return confirm('Create this plan in Stripe? This writes a subscription/invoice to the live account.');">
+          data-confirm="Create this plan in Stripe? This writes a subscription/invoice to the live account.">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="school_year" value="<%= planYear %>">
       <div class="row">
@@ -103,7 +103,7 @@
   <% if (family.active) { %>
     <p class="muted">This family is <strong>active</strong> on the roster.</p>
     <form class="inline" method="post" action="/admin/families/<%= family.id %>/withdraw"
-          onsubmit="return confirm('Withdraw this family? They are removed from the active roster (their ledger and history are kept). Remember to cancel their plan and refund any payment separately.');">
+          data-confirm="Withdraw this family? They are removed from the active roster (their ledger and history are kept). Remember to cancel their plan and refund any payment separately.">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="activate" value="0">
       <button class="secondary small" type="submit">Withdraw family (remove from roster)</button>
@@ -208,7 +208,7 @@
           <td class="num">
             <% if (!c.voided) { %>
               <form class="inline" method="post" action="/admin/families/<%= family.id %>/charges/<%= c.id %>/void"
-                    onsubmit="return confirm('Void this charge? It stays on record but no longer counts.');">
+                    data-confirm="Void this charge? It stays on record but no longer counts.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                 <button class="secondary small" type="submit">Void</button>
               </form>
@@ -293,8 +293,10 @@
           <td class="num">
             <% if (['ach','card'].includes(p.method) && Number(p.amount) > 0 && p.stripe_payment_intent_id) { %>
               <form class="inline" method="post" action="/admin/families/<%= family.id %>/payments/<%= p.id %>/refund"
-                    onsubmit="return confirm('Refund <%= money(p.amount) %> to this family via Stripe? This sends the money back and cannot be undone. ACH refunds take a few business days to post.');">
+                    data-confirm="Refund {amount} to this family via Stripe? This sends the money back and cannot be undone. ACH refunds take a few business days to post.">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="number" name="amount" step="0.01" min="0.01" max="<%= Number(p.amount).toFixed(2) %>"
+                       value="<%= Number(p.amount).toFixed(2) %>" style="width:88px" aria-label="Refund amount" title="Full or partial — defaults to the full payment">
                 <button class="secondary small" type="submit">Refund</button>
               </form>
             <% } %>
