@@ -49,8 +49,13 @@
     <p class="muted">
       Stripe reference: <code><%= family.stripe_subscription_id || family.stripe_invoice_id || '(pending)' %></code><br>
       Created <%= fmtDate(family.plan_created_at) %>.
-      Changing a plan is a separate, explicit action — cancel it in Stripe first, then create a new one.
     </p>
+    <form class="inline" method="post" action="/admin/families/<%= family.id %>/cancel-plan"
+          onsubmit="return confirm('Cancel autopay for this family? This immediately stops ALL future automatic drafts in Stripe. Past payments are NOT refunded (refund those from the Payments list below).');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="secondary small" type="submit">Cancel autopay (stop future drafts)</button>
+    </form>
+    <p class="muted" style="margin-top:8px">To switch a family to a different plan, cancel this one first, then create the new one.</p>
     <% if (family.plan_awaiting_auth && customerPortalUrl) { %>
       <p>Send the parent this link to add their bank details:
         <a href="<%= customerPortalUrl %>" target="_blank" rel="noopener"><%= customerPortalUrl %></a></p>
@@ -88,6 +93,27 @@
         Set up charges and record any PCTC award <em>before</em> creating the plan — the amount is locked from the balance at creation time.
         <% if (!family.stripe_customer_id) { %><br>A Stripe customer will be created for this family automatically.<% } %>
       </p>
+    </form>
+  <% } %>
+</div>
+
+<!-- Enrollment status -->
+<div class="card">
+  <h2>Enrollment status</h2>
+  <% if (family.active) { %>
+    <p class="muted">This family is <strong>active</strong> on the roster.</p>
+    <form class="inline" method="post" action="/admin/families/<%= family.id %>/withdraw"
+          onsubmit="return confirm('Withdraw this family? They are removed from the active roster (their ledger and history are kept). Remember to cancel their plan and refund any payment separately.');">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="activate" value="0">
+      <button class="secondary small" type="submit">Withdraw family (remove from roster)</button>
+    </form>
+  <% } else { %>
+    <p><span class="badge failed">Withdrawn</span> — not on the active roster. History is preserved.</p>
+    <form class="inline" method="post" action="/admin/families/<%= family.id %>/withdraw">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="activate" value="1">
+      <button class="secondary small" type="submit">Reactivate family</button>
     </form>
   <% } %>
 </div>
@@ -250,9 +276,9 @@
 <div class="card">
   <h2>Payments</h2>
   <table>
-    <thead><tr><th>Date</th><th>Method</th><th>Note</th><th>Year</th><th class="num">Amount</th></tr></thead>
+    <thead><tr><th>Date</th><th>Method</th><th>Note</th><th>Year</th><th class="num">Amount</th><th></th></tr></thead>
     <tbody>
-      <% if (payments.length === 0) { %><tr><td colspan="5" class="muted">No payments yet.</td></tr><% } %>
+      <% if (payments.length === 0) { %><tr><td colspan="6" class="muted">No payments yet.</td></tr><% } %>
       <% payments.forEach(function(p){ %>
         <tr>
           <td><%= fmtDate(p.received_on) %></td>
@@ -264,6 +290,15 @@
           <td><%= p.note || '' %></td>
           <td><%= p.school_year %></td>
           <td class="num"><span class="money <%= Number(p.amount) < 0 ? 'negative' : '' %>"><%= money(p.amount) %></span></td>
+          <td class="num">
+            <% if (['ach','card'].includes(p.method) && Number(p.amount) > 0 && p.stripe_payment_intent_id) { %>
+              <form class="inline" method="post" action="/admin/families/<%= family.id %>/payments/<%= p.id %>/refund"
+                    onsubmit="return confirm('Refund <%= money(p.amount) %> to this family via Stripe? This sends the money back and cannot be undone. ACH refunds take a few business days to post.');">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="secondary small" type="submit">Refund</button>
+              </form>
+            <% } %>
+          </td>
         </tr>
       <% }); %>
     </tbody>

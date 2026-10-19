@@ -236,6 +236,40 @@ async function existingPaymentBlock(stripe, family) {
   return null;
 }
 
+// Stop ALL future automatic drafts for a family — cancel every subscription
+// schedule (which cancels its subscription) and then any standalone active
+// subscription on the customer. Best-effort per item so one failure doesn't block
+// the rest. Returns how many billing objects were canceled.
+async function cancelFamilyBilling(stripe, family) {
+  if (!family.stripe_customer_id) return { canceled: 0 };
+  let canceled = 0;
+  try {
+    const scheds = await stripe.subscriptionSchedules.list({ customer: family.stripe_customer_id, limit: 100 });
+    for (const sc of scheds.data) {
+      if (sc.status === 'not_started' || sc.status === 'active') {
+        try { await stripe.subscriptionSchedules.cancel(sc.id); canceled += 1; } catch (e) { console.error('schedule cancel failed', sc.id, e.message); }
+      }
+    }
+  } catch (e) { console.error('list schedules failed', e.message); }
+  try {
+    const subs = await stripe.subscriptions.list({ customer: family.stripe_customer_id, status: 'all', limit: 100 });
+    for (const s of subs.data) {
+      if (['active', 'trialing', 'past_due', 'unpaid', 'incomplete'].includes(s.status)) {
+        try { await stripe.subscriptions.cancel(s.id); canceled += 1; } catch (e) { console.error('subscription cancel failed', s.id, e.message); }
+      }
+    }
+  } catch (e) { console.error('list subscriptions failed', e.message); }
+  return { canceled };
+}
+
+// Refund a payment by its PaymentIntent. Full refund unless amountCents is given.
+// The resulting charge.refunded webhook records the negative payment in the ledger.
+async function refundPayment(stripe, paymentIntentId, amountCents) {
+  const params = { payment_intent: paymentIntentId };
+  if (Number.isInteger(amountCents) && amountCents > 0) params.amount = amountCents;
+  return stripe.refunds.create(params);
+}
+
 // Deep-link into the family's Stripe Customer Portal (manage/replace payment method).
 // Requires the Customer Portal to be activated once in the Stripe dashboard.
 async function createBillingPortal(stripe, family) {
@@ -250,4 +284,5 @@ async function createBillingPortal(stripe, family) {
 module.exports = {
   createCheckout, createBalanceCheckout, createMonthlyCheckout, createSemesterCheckout,
   createCustomCheckout, createBillingPortal, existingPaymentBlock,
+  cancelFamilyBilling, refundPayment,
 };

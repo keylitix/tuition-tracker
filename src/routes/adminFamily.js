@@ -5,6 +5,7 @@ const q = require('../lib/queries');
 const { normalizeAmount } = require('../lib/money');
 const { streamStatement } = require('../lib/pdf');
 const plans = require('../lib/plans');
+const checkout = require('../lib/checkout');
 const stripe = require('../lib/stripeClient');
 const magic = require('../lib/magicLink');
 const { sendMagicLink } = require('../lib/mailer');
@@ -367,6 +368,58 @@ router.post('/:id/plan', loadFamily, async (req, res, next) => {
     const msg = result.awaitingAuth
       ? 'Plan created — awaiting payment authorization. Send the parent the portal link to add their bank details.'
       : 'Payment plan created in Stripe.';
+    res.redirect(back('ok=' + encodeURIComponent(msg)));
+  } catch (err) { next(err); }
+});
+
+// Cancel autopay — stop ALL future automatic drafts in Stripe and clear the plan
+// locally. Used when a family withdraws or changes plans. Past payments are NOT
+// refunded here (refund those separately below).
+router.post('/:id/cancel-plan', loadFamily, async (req, res, next) => {
+  const back = (params) => `/admin/families/${req.family.id}?${params}`;
+  try {
+    let result;
+    try {
+      result = await checkout.cancelFamilyBilling(stripe, req.family);
+    } catch (e) {
+      return res.redirect(back('err=' + encodeURIComponent('Stripe: ' + e.message)));
+    }
+    await q.clearPlan(req.family.id);
+    res.redirect(back('ok=' + encodeURIComponent(`Autopay canceled — ${result.canceled} Stripe subscription(s)/schedule(s) stopped. No further drafts will occur.`)));
+  } catch (err) { next(err); }
+});
+
+// Refund a past online (ACH/card) Stripe payment. The charge.refunded webhook
+// records the negative payment in the ledger once Stripe confirms.
+router.post('/:id/payments/:paymentId/refund', loadFamily, async (req, res, next) => {
+  const back = (params) => `/admin/families/${req.family.id}?${params}`;
+  try {
+    const payment = await q.getPaymentById(req.family.id, parseInt(req.params.paymentId, 10));
+    if (!payment) return res.redirect(back('err=' + encodeURIComponent('Payment not found.')));
+    if (!payment.stripe_payment_intent_id || !['ach', 'card'].includes(payment.method)) {
+      return res.redirect(back('err=' + encodeURIComponent('Only online bank/card payments can be refunded here. For cash/check/PCTC, record a manual adjustment instead.')));
+    }
+    if (Number(payment.amount) <= 0) {
+      return res.redirect(back('err=' + encodeURIComponent('That row is not a positive payment.')));
+    }
+    try {
+      await checkout.refundPayment(stripe, payment.stripe_payment_intent_id);
+    } catch (e) {
+      return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
+    }
+    res.redirect(back('ok=' + encodeURIComponent(`Refund of $${Number(payment.amount).toFixed(2)} issued. It posts to the ledger once Stripe confirms (ACH refunds take a few business days).`)));
+  } catch (err) { next(err); }
+});
+
+// Withdraw (deactivate) or reactivate a family. Ledger history is preserved.
+router.post('/:id/withdraw', loadFamily, async (req, res, next) => {
+  const back = (params) => `/admin/families/${req.family.id}?${params}`;
+  try {
+    const activate = req.body.activate === '1';
+    await q.setFamilyActive(req.family.id, activate);
+    const msg = activate
+      ? 'Family reactivated and back on the roster.'
+      : 'Family withdrawn — removed from the active roster (history kept). Remember to cancel their plan and refund any payment if you haven\'t.';
     res.redirect(back('ok=' + encodeURIComponent(msg)));
   } catch (err) { next(err); }
 });

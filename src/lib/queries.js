@@ -403,6 +403,36 @@ async function setPlan(familyId, { plan, subscriptionId, invoiceId, awaitingAuth
   );
 }
 
+// Clear a family's plan — used when canceling autopay (e.g. a withdrawal). The
+// Stripe subscription/schedule is canceled separately in the route.
+async function clearPlan(familyId) {
+  await query(
+    `UPDATE families
+        SET payment_plan = NULL, stripe_subscription_id = NULL,
+            stripe_invoice_id = NULL, plan_awaiting_auth = 0
+      WHERE id = @id;`,
+    { id: { type: sql.Int, value: familyId } }
+  );
+}
+
+// Activate / deactivate a family (withdrawal removes them from the active roster;
+// their ledger and history are preserved).
+async function setFamilyActive(familyId, active) {
+  await query('UPDATE families SET active = @a WHERE id = @id;', {
+    a: { type: sql.Bit, value: active ? 1 : 0 },
+    id: { type: sql.Int, value: familyId },
+  });
+}
+
+// A single payment row, scoped to the family (used to validate a refund target).
+async function getPaymentById(familyId, paymentId) {
+  const r = await query('SELECT TOP 1 * FROM payments WHERE id = @pid AND family_id = @fid;', {
+    pid: { type: sql.Int, value: paymentId },
+    fid: { type: sql.Int, value: familyId },
+  });
+  return r.recordset[0] || null;
+}
+
 // Record that the office just emailed this family their sign-in link.
 async function setLinkEmailedAt(familyId) {
   await query('UPDATE families SET link_emailed_at = SYSUTCDATETIME() WHERE id = @id;', {
@@ -685,6 +715,9 @@ module.exports = {
   createFamily,
   updateFamily,
   setLinkEmailedAt,
+  clearPlan,
+  setFamilyActive,
+  getPaymentById,
   setStripeCustomerId,
   setPlan,
   clearAwaitingAuth,
