@@ -9,6 +9,7 @@ const bcrypt = require('bcryptjs');
 const q = require('../lib/queries');
 const { normalizeAmount } = require('../lib/money');
 const { currentSchoolYear } = require('../lib/schoolYear');
+const { smtpStatus, sendTestEmail } = require('../lib/mailer');
 
 const router = express.Router();
 
@@ -25,10 +26,32 @@ router.get('/', async (req, res, next) => {
       items,
       admins,
       currentAdminId: req.session.admin.id,
+      adminEmail: req.session.admin.email,
+      smtp: smtpStatus(),
       defaultYear: currentSchoolYear(),
       flash: req.query.ok || null,
       error: req.query.err || null,
     });
+  } catch (err) { next(err); }
+});
+
+// Email diagnostics: send a test email from the LIVE server so the admin can see
+// whether outbound mail actually works (and the exact failure if it doesn't).
+router.post('/test-email', async (req, res, next) => {
+  try {
+    const to = (String(req.body.to || '').trim() || req.session.admin.email).toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('Enter a valid email address to test.'));
+    }
+    try {
+      const r = await sendTestEmail(to);
+      const rej = r.rejected.length ? `; rejected: ${r.rejected.join(', ')}` : '';
+      const msg = `Test email sent to ${to}. Server accepted: ${r.accepted.join(', ') || 'none'}${rej}. `
+        + `Mailgun response: "${r.response}". If it doesn't arrive, check spam and Mailgun → Sending → Logs.`;
+      return res.redirect('/admin/settings?ok=' + encodeURIComponent(msg));
+    } catch (e) {
+      return res.redirect('/admin/settings?err=' + encodeURIComponent('Email test FAILED — ' + e.message));
+    }
   } catch (err) { next(err); }
 });
 

@@ -6,6 +6,36 @@
 <% if (flash) { %><div class="flash"><%= flash %></div><% } %>
 <% if (error) { %><div class="errorbox"><%= error %></div><% } %>
 
+<!-- Email diagnostics -->
+<div class="card">
+  <h2>Email diagnostics</h2>
+  <% if (smtp.configured) { %>
+    <p class="muted">Outbound email is <strong>configured</strong> on this server (what the running app actually sees):</p>
+    <table>
+      <tbody>
+        <tr><td class="muted">SMTP host</td><td><%= smtp.host %>:<%= smtp.port %> <%= smtp.secure ? '(TLS)' : '(STARTTLS)' %></td></tr>
+        <tr><td class="muted">Username</td><td><%= smtp.user || '—' %></td></tr>
+        <tr><td class="muted">Password</td><td><%= smtp.hasPassword ? 'set' : 'NOT SET' %></td></tr>
+        <tr><td class="muted">From address</td><td><%= smtp.from || '—' %></td></tr>
+      </tbody>
+    </table>
+  <% } else { %>
+    <div class="errorbox">
+      SMTP is <strong>NOT configured on this server</strong> — sign-in links and password resets are only written to the
+      server console, never emailed. Set <code>SMTP_HOST</code>, <code>SMTP_PORT</code>, <code>SMTP_USER</code>,
+      <code>SMTP_PASSWORD</code>, and <code>MAIL_FROM</code> in the hosting environment, then <strong>restart the app</strong>.
+    </div>
+  <% } %>
+  <form method="post" action="/admin/settings/test-email" style="margin-top:12px">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="row">
+      <div><label>Send a test email to</label><input name="to" type="email" value="<%= adminEmail %>" placeholder="you@example.com"></div>
+      <div style="display:flex;align-items:flex-end"><button type="submit">Send test email</button></div>
+    </div>
+  </form>
+  <p class="muted">Sends a real email from the live server right now and reports exactly what the mail server said. If it fails, the precise error shows at the top of this page.</p>
+</div>
+
 <!-- Standard tuition -->
 <div class="card">
   <h2>Standard tuition <span class="muted">(per student, per year)</span></h2>

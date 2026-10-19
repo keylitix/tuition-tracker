@@ -147,7 +147,15 @@ app.use((err, req, res, next) => {
 // iisnode passes a named-pipe path in process.env.PORT; plain `node` uses a number.
 const port = process.env.PORT || config.port;
 if (require.main === module) {
-  app.listen(port, () => console.log(`Tuition Tracker listening on ${port}`));
+  app.listen(port, () => {
+    console.log(`Tuition Tracker listening on ${port}`);
+    // Loud, non-silent warning: without SMTP, magic links / resets are never emailed.
+    if (!config.mail.host) {
+      console.warn('[WARN] SMTP is NOT configured (SMTP_HOST empty) — sign-in links and password resets will only be logged, not emailed. Set SMTP_* env vars and restart.');
+    } else {
+      console.log(`[mail] SMTP configured: host=${config.mail.host}:${config.mail.port} user=${config.mail.user || '(none)'} from="${config.mail.from}"`);
+    }
+  });
 }
 
 module.exports = app;

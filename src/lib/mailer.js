@@ -66,4 +66,41 @@ async function sendPasswordReset(email, url) {
   await tx.sendMail({ from: config.mail.from, to: email, subject, text, html });
 }
 
-module.exports = { sendMagicLink, sendPasswordReset };
+// What the RUNNING process sees for SMTP (password never exposed — just set/unset).
+// Lets an admin confirm on the live site whether mail is actually configured.
+function smtpStatus() {
+  return {
+    configured: !!config.mail.host,
+    host: config.mail.host || null,
+    port: config.mail.port,
+    secure: config.mail.secure,
+    user: config.mail.user || null,
+    from: config.mail.from || null,
+    hasPassword: !!config.mail.password,
+  };
+}
+
+// Send a one-off diagnostic email. Throws with a clear reason if SMTP is unset or
+// the server/auth rejects it, so the admin sees the real failure.
+async function sendTestEmail(to) {
+  const tx = getTransporter();
+  if (!tx) {
+    throw new Error('SMTP is not configured on this server (SMTP_HOST is empty) — links are only logged to the console, never emailed.');
+  }
+  await tx.verify(); // connection + auth; surfaces bad host/credentials clearly
+  const info = await tx.sendMail({
+    from: config.mail.from,
+    to,
+    subject: `${config.school.name} — email diagnostic test`,
+    text: `This is a diagnostic test from Tuition Tracker (${new Date().toISOString()}).\n`
+      + `If you received it, outbound email from the live server is working.`,
+  });
+  return {
+    messageId: info.messageId,
+    accepted: info.accepted || [],
+    rejected: info.rejected || [],
+    response: info.response || '',
+  };
+}
+
+module.exports = { sendMagicLink, sendPasswordReset, smtpStatus, sendTestEmail };
