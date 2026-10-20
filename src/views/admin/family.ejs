@@ -291,12 +291,11 @@
           <td><%= p.school_year %></td>
           <td class="num"><span class="money <%= Number(p.amount) < 0 ? 'negative' : '' %>"><%= money(p.amount) %></span></td>
           <td class="num">
-            <% if (['ach','card'].includes(p.method) && Number(p.amount) > 0 && p.stripe_payment_intent_id) { %>
+            <% if (Number(p.amount) > 0 && p.method !== 'refund' && p.method !== 'pctc') {
+                 var viaStripe = ['ach','card'].includes(p.method) && p.stripe_payment_intent_id; %>
               <form class="inline" method="post" action="/admin/families/<%= family.id %>/payments/<%= p.id %>/refund"
-                    data-confirm="Refund {amount} to this family via Stripe? This sends the money back and cannot be undone. ACH refunds take a few business days to post.">
+                    data-confirm="Refund <%= money(p.amount) %><%= viaStripe ? ' to this family via Stripe? This sends the money back and cannot be undone. ACH refunds take a few business days.' : '? This records the refund in the ledger — issue the money to the family separately.' %>">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <input type="number" name="amount" step="0.01" min="0.01" max="<%= Number(p.amount).toFixed(2) %>"
-                       value="<%= Number(p.amount).toFixed(2) %>" style="width:88px" aria-label="Refund amount" title="Full or partial — defaults to the full payment">
                 <button class="secondary small" type="submit">Refund</button>
               </form>
             <% } %>
@@ -305,8 +304,32 @@
       <% }); %>
     </tbody>
   </table>
+  <p class="muted" style="margin:6px 0 0">Use <strong>Refund</strong> next to a payment to send it back. Online (bank/card) payments go back through Stripe; others are recorded for you to repay separately.</p>
 
-  <details style="margin-top:12px" open>
+  <% var onlinePayments = payments.filter(function(p){ return ['ach','card'].includes(p.method) && Number(p.amount) > 0 && p.stripe_payment_intent_id; }); %>
+  <details style="margin-top:14px">
+    <summary>Refund a custom amount</summary>
+    <form method="post" action="/admin/families/<%= family.id %>/refund-custom" style="margin-top:10px" data-confirm="Issue a refund of {amount}? For a Stripe target this sends money back; for Manual it only records it.">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="row">
+        <div>
+          <label>Refund against</label>
+          <select name="target">
+            <% onlinePayments.forEach(function(p){ %>
+              <option value="pi:<%= p.id %>"><%= fmtDate(p.received_on) %> — <%= money(p.amount) %> (<%= methodLabel(p.method) %>) via Stripe</option>
+            <% }); %>
+            <option value="manual">Manual / outside Stripe (record only)</option>
+          </select>
+        </div>
+        <div><label>Amount</label><input name="amount" inputmode="decimal" placeholder="0.00" required></div>
+        <div><label>Note</label><input name="note" placeholder="Optional"></div>
+      </div>
+      <p class="muted" style="margin:8px 0 0">Pick an online payment to send a partial amount back through Stripe, or “Manual” to record a refund you’re issuing another way.</p>
+      <div style="margin-top:12px"><button type="submit">Issue refund</button></div>
+    </form>
+  </details>
+
+  <details style="margin-top:14px">
     <summary>Record payment</summary>
     <form method="post" action="/admin/families/<%= family.id %>/payments" style="margin-top:10px">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -314,7 +337,7 @@
         <div>
           <label>Method</label>
           <select id="pay-method" name="method" required>
-            <% methods.forEach(function(m){ %>
+            <% methods.filter(function(m){ return m !== 'refund'; }).forEach(function(m){ %>
               <option value="<%= m %>"><%= methodLabel(m) %></option>
             <% }); %>
           </select>
@@ -331,7 +354,6 @@
         </div>
         <div><label>Note</label><input name="note" placeholder="Optional"></div>
       </div>
-      <p class="muted" style="margin:10px 0 0">Refunds: choose <em>Refund</em> and enter a negative amount.</p>
       <div style="margin-top:12px"><button type="submit">Record payment</button></div>
     </form>
   </details>

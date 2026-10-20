@@ -391,40 +391,83 @@ router.post('/:id/cancel-plan', loadFamily, async (req, res, next) => {
 
 // Refund a past online (ACH/card) Stripe payment. The charge.refunded webhook
 // records the negative payment in the ledger once Stripe confirms.
+// Full refund of one payment. Online (ACH/card) goes back through Stripe (the
+// charge.refunded webhook records it); anything else is recorded as a manual
+// reversal in the ledger (the office issues the money separately).
 router.post('/:id/payments/:paymentId/refund', loadFamily, async (req, res, next) => {
   const back = (params) => `/admin/families/${req.family.id}?${params}`;
   try {
     const payment = await q.getPaymentById(req.family.id, parseInt(req.params.paymentId, 10));
     if (!payment) return res.redirect(back('err=' + encodeURIComponent('Payment not found.')));
-    if (!payment.stripe_payment_intent_id || !['ach', 'card'].includes(payment.method)) {
-      return res.redirect(back('err=' + encodeURIComponent('Only online bank/card payments can be refunded here. For cash/check/PCTC, record a manual adjustment instead.')));
-    }
     const paidCents = Math.round(Number(payment.amount) * 100);
     if (paidCents <= 0) {
       return res.redirect(back('err=' + encodeURIComponent('That row is not a positive payment.')));
     }
-    // Amount is optional — defaults to the full payment. A smaller value is a
-    // partial refund; it can never exceed the original payment.
-    let amountCents; // undefined => full refund
-    const raw = String(req.body.amount || '').trim();
-    if (raw) {
-      const dollars = normalizeAmount(raw);
-      amountCents = Math.round(Number(dollars) * 100);
-      if (!Number.isFinite(amountCents) || amountCents <= 0) {
-        return res.redirect(back('err=' + encodeURIComponent('Enter a valid refund amount.')));
+    const amount = (paidCents / 100).toFixed(2);
+
+    if (payment.stripe_payment_intent_id && ['ach', 'card'].includes(payment.method)) {
+      try {
+        await checkout.refundPayment(stripe, payment.stripe_payment_intent_id);
+      } catch (e) {
+        return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
       }
-      if (amountCents > paidCents) {
-        return res.redirect(back('err=' + encodeURIComponent(`Refund can't exceed the original payment of $${(paidCents / 100).toFixed(2)}.`)));
+      return res.redirect(back('ok=' + encodeURIComponent(`Refund of $${amount} issued via Stripe. It posts to the ledger once Stripe confirms (ACH refunds take a few business days).`)));
+    }
+    // Manual payment — record the reversal in the ledger.
+    await q.recordPayment({
+      familyId: req.family.id,
+      amount: -(paidCents / 100),
+      method: 'refund',
+      receivedOn: new Date().toISOString().slice(0, 10),
+      schoolYear: payment.school_year,
+      note: `Refund of ${payment.method} payment${payment.note ? ` (${payment.note})` : ''}`,
+      createdBy: req.session.admin.id,
+    });
+    res.redirect(back('ok=' + encodeURIComponent(`Refund of $${amount} recorded. Issue the money to the family separately.`)));
+  } catch (err) { next(err); }
+});
+
+// Custom / partial refund. Target a specific online payment (partial Stripe
+// refund) or choose "manual" to record a ledger-only refund of any amount.
+router.post('/:id/refund-custom', loadFamily, async (req, res, next) => {
+  const back = (params) => `/admin/families/${req.family.id}?${params}`;
+  try {
+    const target = String(req.body.target || '').trim();
+    const dollars = normalizeAmount(req.body.amount);
+    const cents = Math.round(Number(dollars) * 100);
+    if (!Number.isFinite(cents) || cents <= 0) {
+      return res.redirect(back('err=' + encodeURIComponent('Enter a valid refund amount.')));
+    }
+    const note = String(req.body.note || '').trim();
+
+    if (target.startsWith('pi:')) {
+      const payment = await q.getPaymentById(req.family.id, parseInt(target.slice(3), 10));
+      if (!payment || !payment.stripe_payment_intent_id || !['ach', 'card'].includes(payment.method)) {
+        return res.redirect(back('err=' + encodeURIComponent('That online payment can\'t be refunded.')));
       }
-      if (amountCents === paidCents) amountCents = undefined; // full refund
+      const paidCents = Math.round(Number(payment.amount) * 100);
+      if (cents > paidCents) {
+        return res.redirect(back('err=' + encodeURIComponent(`Refund can't exceed that payment of $${(paidCents / 100).toFixed(2)}.`)));
+      }
+      try {
+        await checkout.refundPayment(stripe, payment.stripe_payment_intent_id, cents === paidCents ? undefined : cents);
+      } catch (e) {
+        return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
+      }
+      return res.redirect(back('ok=' + encodeURIComponent(`Refund of $${(cents / 100).toFixed(2)} issued via Stripe. It posts to the ledger once Stripe confirms.`)));
     }
-    try {
-      await checkout.refundPayment(stripe, payment.stripe_payment_intent_id, amountCents);
-    } catch (e) {
-      return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
-    }
-    const refunded = (amountCents || paidCents) / 100;
-    res.redirect(back('ok=' + encodeURIComponent(`Refund of $${refunded.toFixed(2)} issued. It posts to the ledger once Stripe confirms (ACH refunds take a few business days).`)));
+
+    // Manual ledger refund (not through Stripe).
+    await q.recordPayment({
+      familyId: req.family.id,
+      amount: -(cents / 100),
+      method: 'refund',
+      receivedOn: new Date().toISOString().slice(0, 10),
+      schoolYear: currentSchoolYear(),
+      note: note || 'Manual refund',
+      createdBy: req.session.admin.id,
+    });
+    res.redirect(back('ok=' + encodeURIComponent(`Manual refund of $${(cents / 100).toFixed(2)} recorded. Issue the money to the family separately.`)));
   } catch (err) { next(err); }
 });
 
