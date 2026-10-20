@@ -134,3 +134,38 @@ button.small { padding: 5px 9px; font-size: 13px; }
 .balance-hero { font-size: 30px; font-weight: 800; }
 .center-narrow { max-width: 420px; margin: 60px auto; }
 details.card summary { cursor: pointer; font-weight: 600; }
+
+/* =====================  Mobile friendliness  =====================
+   Goal: the PAGE never scrolls sideways. Anything genuinely wide (data
+   tables) scrolls inside its own card instead, and long unbreakable
+   strings wrap. Form rows and toolbars stack on narrow screens. */
+html, body { overflow-x: hidden; max-width: 100%; }
+.card { overflow-x: auto; -webkit-overflow-scrolling: touch; } /* wide tables scroll within the card, not the page */
+img { max-width: 100%; height: auto; }
+code { overflow-wrap: anywhere; word-break: break-word; }
+
+@media (max-width: 640px) {
+  /* Top bar wraps instead of overflowing */
+  header.topbar { flex-wrap: wrap; padding: 8px 16px; min-height: 0; row-gap: 2px; }
+  header.topbar nav { display: flex; flex-wrap: wrap; align-items: center; column-gap: 14px; width: 100%; }
+  header.topbar nav a, header.topbar form { margin-left: 0; }
+
+  main { padding: 0 12px; margin: 14px auto; }
+  .card { padding: 14px; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 15px; }
+  .balance-hero { font-size: 26px; }
+
+  /* Form fields and toolbar controls stack full-width */
+  .row > div { flex-basis: 100%; }
+  .toolbar { gap: 8px; }
+  .toolbar form { flex-wrap: wrap; width: 100%; }
+  .toolbar input[type="search"] { flex: 1 1 100%; width: 100%; }
+  .toolbar select, .toolbar button, .toolbar .btn { flex: 1 1 auto; }
+
+  /* Keep table columns readable — the card scrolls sideways instead of the page,
+     and instead of squishing 6 columns into 375px. */
+  th, td { padding: 8px 10px; white-space: nowrap; }
+  button, .btn { padding: 10px 14px; }
+  button.small { padding: 6px 10px; }
+}
