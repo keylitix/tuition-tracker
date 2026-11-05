@@ -391,7 +391,8 @@ async function setPlan(familyId, { plan, subscriptionId, invoiceId, awaitingAuth
             stripe_subscription_id = @sub,
             stripe_invoice_id = @inv,
             plan_created_at = SYSUTCDATETIME(),
-            plan_awaiting_auth = @awaiting
+            plan_awaiting_auth = @awaiting,
+            plan_canceled_at = NULL
       WHERE id = @id;`,
     {
       id: { type: sql.Int, value: familyId },
@@ -409,7 +410,8 @@ async function clearPlan(familyId) {
   await query(
     `UPDATE families
         SET payment_plan = NULL, stripe_subscription_id = NULL,
-            stripe_invoice_id = NULL, plan_awaiting_auth = 0
+            stripe_invoice_id = NULL, plan_awaiting_auth = 0,
+            plan_canceled_at = SYSUTCDATETIME()
       WHERE id = @id;`,
     { id: { type: sql.Int, value: familyId } }
   );

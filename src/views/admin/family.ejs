@@ -41,6 +41,11 @@
 <!-- Payment plan (spec §7.4) -->
 <div class="card">
   <h2>Payment plan <span class="muted">— <%= planYear %></span></h2>
+  <% if (!family.payment_plan && family.plan_canceled_at) { %>
+    <div class="flash" style="margin:0 0 12px">
+      <strong>Autopay canceled</strong> on <%= fmtDateTime(family.plan_canceled_at) %> — no automatic drafts are scheduled.
+    </div>
+  <% } %>
   <% if (family.payment_plan) { %>
     <p>
       Active plan: <strong><%= (planSpecs[family.payment_plan] || {}).label || family.payment_plan %></strong>

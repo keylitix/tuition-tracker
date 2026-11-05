@@ -260,7 +260,7 @@ async function handleCheckoutCompleted(run, session, ctx, deferred, stripeClient
     const plan = md.plan || 'monthly';
     await run(
       `UPDATE families SET payment_plan = @plan, stripe_subscription_id = @sub,
-              plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0
+              plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0, plan_canceled_at = NULL
         WHERE id = @fid;`,
       {
         plan: { type: sql.NVarChar(20), value: plan },
@@ -291,7 +291,7 @@ async function handleCheckoutCompleted(run, session, ctx, deferred, stripeClient
   // cancels right after — using the payment method saved during this checkout.
   if (session.mode === 'payment' && md.plan === 'semester') {
     await run(
-      `UPDATE families SET payment_plan = 'semester', plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0
+      `UPDATE families SET payment_plan = 'semester', plan_created_at = SYSUTCDATETIME(), plan_awaiting_auth = 0, plan_canceled_at = NULL
         WHERE id = @fid;`,
       { fid: { type: sql.Int, value: family.id } }
     );
