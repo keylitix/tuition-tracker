@@ -86,7 +86,7 @@
     <iisnode
       nodeProcessCountPerApplication="1"
       watchedFiles="web.config;*.js"
-      loggingEnabled="true"
+      loggingEnabled="false"
       devErrorsEnabled="false" />
 
     <httpErrors existingResponse="PassThrough" />
