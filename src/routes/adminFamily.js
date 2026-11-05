@@ -405,15 +405,17 @@ router.post('/:id/payments/:paymentId/refund', loadFamily, async (req, res, next
     }
     const amount = (paidCents / 100).toFixed(2);
 
-    if (payment.stripe_payment_intent_id && ['ach', 'card'].includes(payment.method)) {
+    // Online (ACH/card) -> refund through Stripe. The charge is resolved from the
+    // invoice when the payment has no stored PaymentIntent.
+    if (['ach', 'card'].includes(payment.method)) {
       try {
-        await checkout.refundPayment(stripe, payment.stripe_payment_intent_id);
+        await checkout.refundRecordedPayment(stripe, payment);
       } catch (e) {
         return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
       }
       return res.redirect(back('ok=' + encodeURIComponent(`Refund of $${amount} issued via Stripe. It posts to the ledger once Stripe confirms (ACH refunds take a few business days).`)));
     }
-    // Manual payment — record the reversal in the ledger.
+    // Truly manual payment (check/adjustment) — record the reversal in the ledger.
     await q.recordPayment({
       familyId: req.family.id,
       amount: -(paidCents / 100),
@@ -442,7 +444,7 @@ router.post('/:id/refund-custom', loadFamily, async (req, res, next) => {
 
     if (target.startsWith('pi:')) {
       const payment = await q.getPaymentById(req.family.id, parseInt(target.slice(3), 10));
-      if (!payment || !payment.stripe_payment_intent_id || !['ach', 'card'].includes(payment.method)) {
+      if (!payment || !['ach', 'card'].includes(payment.method)) {
         return res.redirect(back('err=' + encodeURIComponent('That online payment can\'t be refunded.')));
       }
       const paidCents = Math.round(Number(payment.amount) * 100);
@@ -450,7 +452,7 @@ router.post('/:id/refund-custom', loadFamily, async (req, res, next) => {
         return res.redirect(back('err=' + encodeURIComponent(`Refund can't exceed that payment of $${(paidCents / 100).toFixed(2)}.`)));
       }
       try {
-        await checkout.refundPayment(stripe, payment.stripe_payment_intent_id, cents === paidCents ? undefined : cents);
+        await checkout.refundRecordedPayment(stripe, payment, cents === paidCents ? undefined : cents);
       } catch (e) {
         return res.redirect(back('err=' + encodeURIComponent('Stripe refund failed: ' + e.message)));
       }

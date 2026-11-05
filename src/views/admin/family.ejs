@@ -306,7 +306,7 @@
   </table>
   <p class="muted" style="margin:6px 0 0">Use <strong>Refund</strong> next to a payment to send it back. Online (bank/card) payments go back through Stripe; others are recorded for you to repay separately.</p>
 
-  <% var onlinePayments = payments.filter(function(p){ return ['ach','card'].includes(p.method) && Number(p.amount) > 0 && p.stripe_payment_intent_id; }); %>
+  <% var onlinePayments = payments.filter(function(p){ return ['ach','card'].includes(p.method) && Number(p.amount) > 0 && (p.stripe_payment_intent_id || p.stripe_invoice_id); }); %>
   <details style="margin-top:14px">
     <summary>Refund a custom amount</summary>
     <form method="post" action="/admin/families/<%= family.id %>/refund-custom" style="margin-top:10px" data-confirm="Issue a refund of {amount}? For a Stripe target this sends money back; for Manual it only records it.">

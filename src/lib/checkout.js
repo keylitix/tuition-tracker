@@ -270,6 +270,42 @@ async function refundPayment(stripe, paymentIntentId, amountCents) {
   return stripe.refunds.create(params);
 }
 
+// Find a refundable Stripe target (payment_intent or charge) for a RECORDED
+// payment. Subscription-invoice ACH payments often have NO stored payment_intent
+// (newer Stripe API dropped invoice.payment_intent), so fall back to resolving the
+// charge/PI from the invoice. Returns null only when nothing links to Stripe.
+async function resolveRefundTarget(stripe, payment) {
+  if (payment.stripe_payment_intent_id) return { payment_intent: payment.stripe_payment_intent_id };
+  if (payment.stripe_invoice_id) {
+    const inv = await stripe.invoices.retrieve(payment.stripe_invoice_id);
+    if (inv.payment_intent) return { payment_intent: typeof inv.payment_intent === 'string' ? inv.payment_intent : inv.payment_intent.id };
+    if (inv.charge) return { charge: typeof inv.charge === 'string' ? inv.charge : inv.charge.id };
+    // Newest API keeps the charge on the invoice's payment records.
+    const payRec = inv.payments && inv.payments.data && inv.payments.data[0];
+    const paid = payRec && (payRec.payment || payRec);
+    if (paid) {
+      if (paid.payment_intent) return { payment_intent: typeof paid.payment_intent === 'string' ? paid.payment_intent : paid.payment_intent.id };
+      if (paid.charge) return { charge: typeof paid.charge === 'string' ? paid.charge : paid.charge.id };
+    }
+  }
+  return null;
+}
+
+// Refund a recorded payment through Stripe, resolving the charge from the invoice
+// when needed. Full refund unless amountCents is given. Throws (with .noStripeTarget)
+// when the payment can't be linked to a Stripe charge.
+async function refundRecordedPayment(stripe, payment, amountCents) {
+  const target = await resolveRefundTarget(stripe, payment);
+  if (!target) {
+    const e = new Error('Could not find the original Stripe charge for this payment. Refund it directly from the Stripe dashboard instead.');
+    e.noStripeTarget = true;
+    throw e;
+  }
+  const params = { ...target };
+  if (Number.isInteger(amountCents) && amountCents > 0) params.amount = amountCents;
+  return stripe.refunds.create(params);
+}
+
 // Deep-link into the family's Stripe Customer Portal (manage/replace payment method).
 // Requires the Customer Portal to be activated once in the Stripe dashboard.
 async function createBillingPortal(stripe, family) {
@@ -284,5 +320,5 @@ async function createBillingPortal(stripe, family) {
 module.exports = {
   createCheckout, createBalanceCheckout, createMonthlyCheckout, createSemesterCheckout,
   createCustomCheckout, createBillingPortal, existingPaymentBlock,
-  cancelFamilyBilling, refundPayment,
+  cancelFamilyBilling, refundPayment, resolveRefundTarget, refundRecordedPayment,
 };
