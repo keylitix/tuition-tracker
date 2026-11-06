@@ -297,7 +297,7 @@
           <td class="num"><span class="money <%= Number(p.amount) < 0 ? 'negative' : '' %>"><%= money(p.amount) %></span></td>
           <td class="num">
             <% if (Number(p.amount) > 0 && p.method !== 'refund' && p.method !== 'pctc') {
-                 var viaStripe = ['ach','card'].includes(p.method) && p.stripe_payment_intent_id; %>
+                 var viaStripe = ['ach','card'].includes(p.method); %>
               <form class="inline" method="post" action="/admin/families/<%= family.id %>/payments/<%= p.id %>/refund"
                     data-confirm="Refund <%= money(p.amount) %><%= viaStripe ? ' to this family via Stripe? This sends the money back and cannot be undone. ACH refunds take a few business days.' : '? This records the refund in the ledger — issue the money to the family separately.' %>">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>">
